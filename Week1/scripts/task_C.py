@@ -170,11 +170,13 @@ def main():
     else:
         raise ValueError(f"Unknown MODEL_TYPE: {MODEL_TYPE}")
 
-    print("\n=== Training sequences (0000–0015) ===")
-    run_inference_on_sequences(detector, base_dir, range(0, 16),  "training", MODEL_TYPE)
 
-    print("\n=== Test sequences (0016–0020) ===")
-    run_inference_on_sequences(detector, base_dir, range(16, 21), "test",     MODEL_TYPE)
+
+    print("\n=== Training sequences")
+    run_inference_on_sequences(detector, base_dir, [0,1,3,4,5,9,11,12,15,17,19,20],  "training", MODEL_TYPE)
+
+    print("\n=== Test sequences")
+    run_inference_on_sequences(detector, base_dir, [2,6,7,8,10,13,14,16,18,], "test",     MODEL_TYPE)
 
     print("\nDone!")
 

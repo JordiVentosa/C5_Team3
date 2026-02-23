@@ -252,8 +252,8 @@ def main():
     CONF_THR   = 0.5
 
     SEQ_RANGES = {
-        "training": range(0, 16),
-        "test":     range(16, 21),
+        "training": [0,1,3,4,5,9,11,12,15,17,19,20],
+        "test":     [2,6,7,8,10,13,14,16,18,],
     }
 
     print(f"\nBuilding COCO GT  [split={RUN_SPLIT}] ...")
