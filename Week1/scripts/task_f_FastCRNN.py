@@ -2,7 +2,7 @@ import torchvision
 import torch
 import wandb
 from torch.utils.data import DataLoader
-from Week1.src.utils.dataset import KittyDataset
+from Week1.src.utils.DeArtdataset import EuropeanArtDataset
 
 import wandb
 import numpy as np
@@ -14,6 +14,12 @@ import random
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
+import os
+
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
     A.RandomBrightnessContrast(p=0.2),
@@ -23,14 +29,14 @@ train_transform = A.Compose([
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']))
 
 
-dataset = KittyDataset(root_dir="/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/datasets/KITTI-MOTS" ,transform=train_transform)
+dataset = EuropeanArtDataset(transform=train_transform)
 
 def collate_fn(batch):
     return tuple(zip(*batch))
 
 loader = torch.utils.data.DataLoader(
     dataset,
-    batch_size=16,
+    batch_size=4,
     shuffle=True,
     collate_fn=collate_fn
 )

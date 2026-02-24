@@ -26,31 +26,36 @@ class KittyDataset(Dataset):
         self.transform = transform
         self.image_paths = []
         self.annotations = []
-        
-        seq_file = "/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/src/utils/train.seqmap" if mode == "train" else "/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/src/utils/val.seqmap"
-        self.load_metadata(seq_file)
+        if mode == "train" :
+            seq_files = ["/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/src/utils/train.seqmap"]
+        elif mode == "val":
+            seq_files =  ["/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/src/utils/val.seqmap"]
+        else:
+            seq_files = ["/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/src/utils/train.seqmap","/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/src/utils/val.seqmap"]
+        self.load_metadata(seq_files)
 
-    def load_metadata(self, seqmap):
-        seqmaps, _ = load_seqmap(seqmap)
-        for seq in seqmaps:
-            seq_path_txt = os.path.join(self.root_dir, "instances_txt", f"{seq}.txt")
-            seq_path_folder = os.path.join(self.root_dir, "training", "image_02", seq)
-            text = load_txt(seq_path_txt)
-            
-            for image_path in sorted(glob.glob(os.path.join(seq_path_folder, "*.png"))):
-                frame = filename_to_frame_nr(os.path.basename(image_path))
-                if frame not in text: continue
+    def load_metadata(self, sequence_maps):
+        for seqmap in sequence_maps:
+            seqmaps, _ = load_seqmap(seqmap)
+            for seq in seqmaps:
+                seq_path_txt = os.path.join(self.root_dir, "instances_txt", f"{seq}.txt")
+                seq_path_folder = os.path.join(self.root_dir, "training", "image_02", seq)
+                text = load_txt(seq_path_txt)
+                
+                for image_path in sorted(glob.glob(os.path.join(seq_path_folder, "*.png"))):
+                    frame = filename_to_frame_nr(os.path.basename(image_path))
+                    if frame not in text: continue
 
-                boxes, labels = [], []
-                for obj in text[frame]:
-                    if obj.class_id not in CLASS_MAPPING: continue
-                    x, y, w, h = mask_utils.toBbox(obj.mask)
-                    boxes.append([x, y, x + w, y + h]) # Pascal_VOC format
-                    labels.append(CLASS_MAPPING[obj.class_id])
+                    boxes, labels = [], []
+                    for obj in text[frame]:
+                        if obj.class_id not in CLASS_MAPPING: continue
+                        x, y, w, h = mask_utils.toBbox(obj.mask)
+                        boxes.append([x, y, x + w, y + h]) # Pascal_VOC format
+                        labels.append(CLASS_MAPPING[obj.class_id])
 
-                if len(boxes) > 0:
-                    self.image_paths.append(image_path)
-                    self.annotations.append({"boxes": boxes, "labels": labels})
+                    if len(boxes) > 0:
+                        self.image_paths.append(image_path)
+                        self.annotations.append({"boxes": boxes, "labels": labels})
 
     def __getitem__(self, idx):
         # Read image
