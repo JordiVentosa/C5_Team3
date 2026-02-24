@@ -2,3 +2,5 @@ datasets/
 runs/
 *.pt
 *.pyc
+KITTI-MOTS
+wandb/

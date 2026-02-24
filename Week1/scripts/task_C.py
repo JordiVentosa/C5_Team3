@@ -115,6 +115,7 @@ def run_inference_on_sequences(detector, base_dir, seq_range, split_name, model_
     image_base_dir    = os.path.join(base_dir, "training", "image_02")
     output_base       = os.path.join("runs/inference", split_name)
 
+    l = 0
     for seq_id in seq_range:
         seq_str  = f"{seq_id:04d}"
         seq_path = os.path.join(image_base_dir, seq_str)
@@ -135,6 +136,7 @@ def run_inference_on_sequences(detector, base_dir, seq_range, split_name, model_
         print(f"  [{split_name}] sequence {seq_str}: {len(image_paths)} frames")
 
         for img_path in image_paths:
+            l += 1
             frame_id = int(os.path.splitext(os.path.basename(img_path))[0])
             img = cv2.imread(img_path)
 
@@ -153,12 +155,12 @@ def run_inference_on_sequences(detector, base_dir, seq_range, split_name, model_
 
             out_path = os.path.join(output_seq_dir, os.path.basename(img_path))
             cv2.imwrite(out_path, img)
-
+    print(l, "images")
 
 def main():
-    base_dir = "/home/msiau/data/tmp/jventosa/KITTI-MOTS"
+    base_dir = "/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/datasets/KITTI-MOTS"
 
-    # ── Choose your detector here ──────────────────────────────────────────
+
     MODEL_TYPE = "yolo"   # "yolo" | "frcnn"
 
     if MODEL_TYPE == "yolo":
