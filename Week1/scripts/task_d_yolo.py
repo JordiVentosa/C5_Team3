@@ -1,14 +1,3 @@
-"""
-task_d_yolo.py
---------------
-Evaluates YOLOv8 on the KITTI-MOTS dataset using official COCO metrics
-(AP, AP50, AP75, APs, APm, APl, AR@1, AR@10, AR@100).
-
-Run from Week1/ directory:
-    python -m scripts.task_d_yolo
-    python -m scripts.task_d_yolo --split val --conf 0.5 --model yolov8x.pt
-"""
-
 import argparse
 import contextlib
 import io
@@ -193,7 +182,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate YOLO on KITTI-MOTS (COCO metrics)")
     parser.add_argument("--split",   choices=["train", "val", "all"], default="val")
     parser.add_argument("--conf",    type=float, default=0.5)
-    parser.add_argument("--model",   default="yolov8x.pt", help="YOLO weights")
+    parser.add_argument("--model",   default="yolo26x.pt", help="YOLO weights")
     parser.add_argument("--output-dir", default="outputs/task_d_yolo")
     return parser.parse_args()
 
