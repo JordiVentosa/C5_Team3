@@ -157,7 +157,7 @@ def main():
     base_dir = "/home/mcv/datasets/C5/KITTI-MOTS"
 
     print("Loading YOLO model...")
-    yolo_detector = YOLOInference(model_version='yolov8x.pt')
+    yolo_detector = YOLOInference(model_version='yolo26x.pt')
 
     # Sequences 0000-0015 -> training split
     print("\n=== Training sequences (0000–0015) ===")
