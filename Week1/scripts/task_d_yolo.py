@@ -13,8 +13,6 @@ from src.models.ultralytics_yolo import YOLOInference
 from src.utils.dataset import KittyDataset
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
 BASE_DIR = "/home/mcv/datasets/C5/KITTI-MOTS"
 
 EVAL_CAT_INFO = [
@@ -25,8 +23,6 @@ EVAL_CAT_INFO = [
 # YOLO uses 0-indexed COCO IDs: person=0, car=2
 YOLO_TO_COCO = {0: 1, 2: 3}
 
-
-# ── Build COCO GT ─────────────────────────────────────────────────────────────
 
 def build_coco_gt(dataset: KittyDataset):
     images_list, anns_list, image_meta = [], [], []
@@ -64,8 +60,6 @@ def build_coco_gt(dataset: KittyDataset):
     return coco_gt, image_meta
 
 
-# ── YOLO inference ────────────────────────────────────────────────────────────
-
 def predict_yolo(detector, image_meta, conf_threshold):
     predictions = []
     for meta in image_meta:
@@ -85,8 +79,6 @@ def predict_yolo(detector, image_meta, conf_threshold):
                 })
     return predictions
 
-
-# ── COCO evaluation ───────────────────────────────────────────────────────────
 
 METRIC_NAMES = [
     "AP[.5:.95]", "AP@.50", "AP@.75",
@@ -129,8 +121,6 @@ def run_coco_eval(coco_gt, predictions):
     print("───────────────────────────────────────────────────────────\n")
     return coco_eval, per_cat_stats
 
-
-# ── Save results ──────────────────────────────────────────────────────────────
 
 def save_results(output_dir, split, model_version, predictions, coco_eval, per_cat_stats):
     os.makedirs(output_dir, exist_ok=True)
@@ -176,14 +166,14 @@ def save_results(output_dir, split, model_version, predictions, coco_eval, per_c
     print(f"    summary.txt")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate YOLO on KITTI-MOTS (COCO metrics)")
     parser.add_argument("--split",   choices=["train", "val", "all"], default="val")
     parser.add_argument("--conf",    type=float, default=0.5)
     parser.add_argument("--model",   default="yolo26x.pt", help="YOLO weights")
     parser.add_argument("--output-dir", default="outputs/task_d_yolo")
+    parser.add_argument("--base-dir", default="/home/mcv/datasets/C5/KITTI-MOTS",
+                        help="Root KITTI-MOTS directory")
     return parser.parse_args()
 
 
@@ -199,7 +189,7 @@ def main():
     print(f"  Conf  : {args.conf}")
 
     print(f"\nLoading dataset [split={args.split}] ...")
-    dataset = KittyDataset(root_dir=BASE_DIR, mode=args.split)
+    dataset = KittyDataset(root_dir=args.base_dir, mode=args.split)
     coco_gt, image_meta = build_coco_gt(dataset)
 
     print(f"\nLoading YOLO ({args.model}) ...")

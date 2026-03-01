@@ -1,3 +1,4 @@
+import argparse
 import os
 import glob
 import cv2
@@ -110,11 +111,11 @@ def draw_yolo_boxes(img, yolo_results, model_names):
 
 
 
-def run_inference_on_sequences(yolo_detector, base_dir, seq_range, split_name):
+def run_inference_on_sequences(yolo_detector, base_dir, seq_range, split_name, output_dir):
     """Run YOLO inference and overlay GT boxes for a range of sequences."""
     instances_txt_dir = os.path.join(base_dir, "instances_txt")
     image_base_dir    = os.path.join(base_dir, "training", "image_02")
-    output_base       = os.path.join("runs/inference", split_name)
+    output_base       = os.path.join(output_dir, split_name)
 
     for seq_id in seq_range:
         seq_str  = f"{seq_id:04d}"
@@ -153,19 +154,29 @@ def run_inference_on_sequences(yolo_detector, base_dir, seq_range, split_name):
             cv2.imwrite(out_path, img)
 
 
-def main():
-    base_dir = "/home/mcv/datasets/C5/KITTI-MOTS"
+def parse_args():
+    parser = argparse.ArgumentParser(description="YOLO inference + GT overlay on KITTI-MOTS")
+    parser.add_argument("--model", default="yolo26x.pt", help="YOLO weights (default: yolo26x.pt)")
+    parser.add_argument("--base-dir", default="/home/mcv/datasets/C5/KITTI-MOTS",
+                        help="Root KITTI-MOTS directory")
+    parser.add_argument("--output-dir", default="runs/inference",
+                        help="Base output directory for annotated frames")
+    return parser.parse_args()
 
-    print("Loading YOLO model...")
-    yolo_detector = YOLOInference(model_version='yolo26x.pt')
+
+def main():
+    args = parse_args()
+
+    print(f"Loading YOLO model ({args.model}) ...")
+    yolo_detector = YOLOInference(model_version=args.model)
 
     # Sequences 0000-0015 -> training split
     print("\n=== Training sequences (0000–0015) ===")
-    run_inference_on_sequences(yolo_detector, base_dir, range(0, 16), "training")
+    run_inference_on_sequences(yolo_detector, args.base_dir, range(0, 16), "training", args.output_dir)
 
     # Sequences 0016-0020 -> test split
     print("\n=== Test sequences (0016–0020) ===")
-    run_inference_on_sequences(yolo_detector, base_dir, range(16, 21), "test")
+    run_inference_on_sequences(yolo_detector, args.base_dir, range(16, 21), "test", args.output_dir)
 
     print("\nDone!")
 
