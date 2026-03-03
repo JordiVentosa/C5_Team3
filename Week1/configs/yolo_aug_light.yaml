@@ -1,0 +1,17 @@
+hsv_h: 0.015
+hsv_s: 0.4
+hsv_v: 0.3
+degrees: 5.0
+translate: 0.1
+scale: 0.3
+shear: 2.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+bgr: 0.0
+mosaic: 0.5
+mixup: 0.0
+copy_paste: 0.0
+auto_augment: ""
+erasing: 0.2
+crop_fraction: 1.0
