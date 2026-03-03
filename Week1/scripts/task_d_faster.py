@@ -1,45 +1,26 @@
-"""
-evaluate_coco.py
-----------------
-Evaluates either YOLOv8 or Faster R-CNN on the KITTI-MOTS dataset using
-standard COCO metrics (AP, AP50, AP75, APs, APm, APl, AR@1, AR@10, AR@100).
-Now uses KittyDataset for GT loading.
-
-Usage
------
-Set MODEL_TYPE = "yolo" | "frcnn" and RUN_SPLIT = "train" | "val" in main().
-"""
-
 import io
 import contextlib
 import cv2
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from Week1.src.models.ultralytics_yolo import YOLOInference
 from Week1.src.models.torchvision_faster_rcnn import FasterRCNNInference
-from Week1.src.utils.dataset import KittyDataset  # adjust import path as needed
+from Week1.src.utils.dataset import KittyDataset
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 
 os.environ["CUDA_VISIBLE_DEVICES"]="2"
-# ── Dataset constants ─────────────────────────────────────────────────────────
 
-# KittyDataset already maps to COCO IDs: car→3, pedestrian→1
 EVAL_CAT_INFO = [
     {"id": 1, "name": "Pedestrian", "supercategory": "person"},
     {"id": 3, "name": "Car",        "supercategory": "vehicle"},
 ]
 
-# YOLO (0-indexed COCO): person=0 → eval 1,  car=2 → eval 3
-YOLO_ALLOWED  = {0: 1, 2: 3}
-# Torchvision Faster R-CNN (1-indexed COCO): person=1 → eval 1, car=3 → eval 3
 FRCNN_ALLOWED = {1: 1, 3: 3}
 
 model_names = ["resnet50","resnet50_v2","mobilenet_v3","mobilenet_320"]
 
-# ── Build COCO GT from KittyDataset ──────────────────────────────────────────
 
 def build_coco_gt_from_dataset(dataset: KittyDataset):
     """
@@ -101,28 +82,6 @@ def build_coco_gt_from_dataset(dataset: KittyDataset):
     return coco_gt, image_meta
 
 
-# ── Prediction runners ────────────────────────────────────────────────────────
-
-def predict_yolo(detector, image_meta, conf_threshold=0.5):
-    predictions = []
-    for meta in image_meta:
-        results = detector.predict(meta["path"], conf_threshold=conf_threshold,
-                                   save_results=False)
-        for result in results:
-            for box in result.boxes:
-                cls_id = int(box.cls[0])
-                if cls_id not in YOLO_ALLOWED:
-                    continue
-                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                predictions.append({
-                    "image_id":    meta["id"],
-                    "category_id": YOLO_ALLOWED[cls_id],
-                    "bbox":        [x1, y1, max(x2 - x1, 1), max(y2 - y1, 1)],
-                    "score":       float(box.conf[0]),
-                })
-    return predictions
-
-
 def predict_frcnn(detector, image_meta, conf_threshold=0.5):
     predictions = []
     for meta in image_meta:
@@ -136,8 +95,6 @@ def predict_frcnn(detector, image_meta, conf_threshold=0.5):
             })
     return predictions
 
-
-# ── COCO evaluation ───────────────────────────────────────────────────────────
 
 def run_coco_eval(coco_gt, predictions, output_file="coco_eval_results.txt"):
     """
@@ -207,12 +164,10 @@ def run_coco_eval(coco_gt, predictions, output_file="coco_eval_results.txt"):
 
     return coco_eval
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     BASE_DIR   = "/home/msiau/data/tmp/agarciat/MCVC/C5/KITTI-MOTS"
-    MODEL_TYPE = "frcnn"   # "yolo" | "frcnn"
-    RUN_SPLIT  = "all"  # "train" | "val"  ← matches KittyDataset mode arg
+    RUN_SPLIT  = "all"
     CONF_THR   = 0.5
 
     print(f"\nBuilding COCO GT via KittyDataset  [split={RUN_SPLIT}] ...")
@@ -227,30 +182,16 @@ def main():
     print(f"  GT images     : {len(coco_gt.getImgIds())}")
     print(f"  GT annotations: {len(coco_gt.getAnnIds())}")
 
-    if MODEL_TYPE == "yolo":
-        print("\nLoading YOLOv8x ...")
-        detector = YOLOInference(model_version="yolov8x.pt")
-        print(f"Running YOLO predictions  [conf>={CONF_THR}] ...")
-        predictions = predict_yolo(detector, image_meta, conf_threshold=CONF_THR)
+    for model_name in model_names:
+        print("\nLoading Faster R-CNN (ResNet-50 FPN) ...")
+        detector = FasterRCNNInference(conf_threshold=CONF_THR, model_name=model_name)
+        print(f"Running Faster R-CNN predictions  [conf>={CONF_THR}] ...")
+        predictions = predict_frcnn(detector, image_meta, conf_threshold=CONF_THR)
         print(f"  Total detections      : {len(predictions)}")
         print(f"  Prediction categories : {sorted({p['category_id'] for p in predictions})}")
 
-        print(f"\n── COCO Evaluation  |  model={MODEL_TYPE}  split={RUN_SPLIT} ──")
-        run_coco_eval(coco_gt, predictions)
-
-    elif MODEL_TYPE == "frcnn":
-        for model_name in model_names:
-            print("\nLoading Faster R-CNN (ResNet-50 FPN) ...")
-            detector = FasterRCNNInference(conf_threshold=CONF_THR,model_name=model_name)
-            print(f"Running Faster R-CNN predictions  [conf>={CONF_THR}] ...")
-            predictions = predict_frcnn(detector, image_meta, conf_threshold=CONF_THR)
-            print(f"  Total detections      : {len(predictions)}")
-            print(f"  Prediction categories : {sorted({p['category_id'] for p in predictions})}")
-
-            print(f"\n── COCO Evaluation  |  model={MODEL_TYPE}  split={RUN_SPLIT} ──")
-            run_coco_eval(coco_gt, predictions,output_file= f"{model_name}.txt")
-    else:
-        raise ValueError(f"Unknown MODEL_TYPE '{MODEL_TYPE}'. Use 'yolo' or 'frcnn'.")
+        print(f"\n── COCO Evaluation  |  model=frcnn  split={RUN_SPLIT} ──")
+        run_coco_eval(coco_gt, predictions, output_file=f"{model_name}.txt")
 
     
 
