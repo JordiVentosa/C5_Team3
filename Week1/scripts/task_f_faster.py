@@ -109,7 +109,7 @@ def main():
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=lambda x: tuple(zip(*x)))
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=lambda x: tuple(zip(*x)))
 
-    wandb.init(project="DeArt-fasterrcnn", config=vars(args))
+    wandb.init(project="DeArt-fasterrcnn", config=vars(args), dir="/home/msiau/data/tmp/jventosa/wandb")
 
     coco_metrics = evaluate_coco(model, val_loader, device)
     log_predictions_to_wandb(model, dataset, device, num_images=10, threshold=0.5)
