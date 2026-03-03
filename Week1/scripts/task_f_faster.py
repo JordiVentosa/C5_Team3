@@ -1,5 +1,4 @@
 import argparse
-import copy
 import torch
 import torchvision
 import wandb

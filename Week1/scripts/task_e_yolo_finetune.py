@@ -3,7 +3,6 @@ import contextlib
 import io
 import json
 import os
-import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -390,7 +389,7 @@ def save_results(output_dir, aug_mode, base_model, conf,
             f.write(f"{cat_name:<15}" + "".join(f"{v:>12.4f}" for v in stats.values()) + "\n")
 
     print(f"\n  Results -> {output_dir}")
-    print(f"    predictions.json | metrics.json | summary.txt")
+    print("    predictions.json | metrics.json | summary.txt")
 
 
 
@@ -423,7 +422,7 @@ def main():
     run_name  = f"aug_{args.aug}_{freeze_label}_{timestamp}"
     eval_dir  = os.path.join(args.output_dir, run_name, "eval")
 
-    print(f"\nTask E - YOLO fine-tune on KITTI-MOTS")
+    print("\nTask E - YOLO fine-tune on KITTI-MOTS")
     print(f"  model: {args.model} | aug: {args.aug} | freeze: {args.freeze} ({freeze_label})")
     print(f"  epochs: {args.epochs} | batch: {args.batch} | imgsz: {args.imgsz}\n")
 

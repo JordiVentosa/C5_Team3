@@ -1,5 +1,4 @@
 import argparse
-import copy
 import torch
 import torchvision
 import wandb
@@ -7,7 +6,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from Week1.src.utils.dataset import KittyDataset
+from Week1.src.utils.dataset_rcnn import KittyDataset
 from Week1.src.utils.fine_tune_utils import log_predictions_to_wandb, evaluate_coco
 
 import os
@@ -36,11 +35,11 @@ def get_args():
     return parser.parse_args()
 
 def get_transforms(level):
-    if level == 'light':
-        return A.Compose([A.HorizontalFlip(p=0.5), A.ToFloat(max_value=255.0), ToTensorV2()],
+    if level == 'None':
+        return A.Compose([ A.ToFloat(max_value=255.0), ToTensorV2()],
                          bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']))
     
-    elif level == 'medium':
+    elif level == 'light':
         return A.Compose([
             A.HorizontalFlip(p=0.5),
             A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),

@@ -13,8 +13,6 @@ Set MODEL_TYPE = "yolo" | "frcnn" and RUN_SPLIT = "train" | "val" in main().
 import io
 import contextlib
 import cv2
-import numpy as np
-import torch
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 

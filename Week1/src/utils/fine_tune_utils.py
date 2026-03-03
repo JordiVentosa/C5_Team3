@@ -1,24 +1,13 @@
-import copy
 
-import torchvision
 import torch
 import wandb
-from torch.utils.data import DataLoader
-from Week1.src.utils.dataset import KittyDataset
-import pycocotools.mask as mask_util
 from torchvision.ops import box_convert
 import numpy as np
 import cv2
-import random
 
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from torchvision.ops import box_convert
-import json, io
-from torchvision.datasets import CocoDetection
 
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
 from tqdm import tqdm
 
@@ -138,7 +127,6 @@ def evaluate_coco(model, data_loader, device):
 
             # Recover image_ids based on batch position
             batch_size = len(images)
-            start_idx = batch_idx * data_loader.batch_size
 
             for i, (output, target) in enumerate(zip(outputs, targets)):
                 image_id = target["image_id"].item()  # use the real ID

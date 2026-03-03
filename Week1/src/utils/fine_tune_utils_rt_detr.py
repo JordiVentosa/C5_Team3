@@ -1,27 +1,15 @@
-import copy
 
-import torchvision
 import torch
 import wandb
-from torch.utils.data import DataLoader
-from Week1.src.utils.dataset import KittyDataset
-import pycocotools.mask as mask_util
 from torchvision.ops import box_convert
 import numpy as np
 import cv2
-import random
 
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from torchvision.ops import box_convert
-import json, io
-from torchvision.datasets import CocoDetection
 
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
 from tqdm import tqdm
-from torchvision.ops import box_convert
 
 EVAL_CLASS_MAPPING = {0: 1, 1: 3} # Map internal 0/1 back to COCO 1/3
 

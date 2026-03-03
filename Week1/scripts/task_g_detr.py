@@ -2,20 +2,13 @@ import argparse
 import torch
 import wandb
 import albumentations as A
-from tqdm import tqdm
-from torch.utils.data import DataLoader
-from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
 
 from Week1.src.utils.dataset_hf import KittyDataset
-from Week1.src.utils.fine_tune_utils import log_predictions_to_wandb, evaluate_coco
 from transformers import AutoModelForObjectDetection,AutoImageProcessor
 
-from PIL import Image, ImageDraw
-import numpy as np
-import matplotlib.pyplot  as plt
 from transformers import TrainingArguments
 
-from Week1.src.utils.evaluate import MAPEvaluator, ModelOutput
+from Week1.src.utils.evaluate import MAPEvaluator
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
@@ -94,9 +87,7 @@ def main():
         data["pixel_values"] = torch.stack([x["pixel_values"] for x in batch])
         data["labels"] = [x["labels"] for x in batch]
         return data
-    # 2. Optimizers
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(params, lr=args.lr, weight_decay=1e-4)
+
 
     # 3. Datasets
     train_transform = get_transforms(args.aug_level)

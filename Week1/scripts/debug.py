@@ -11,15 +11,12 @@ Set MODEL_TYPE and SEQ_ID below, then run:
 
 import os
 import glob
-import json
 import cv2
 import numpy as np
 import torch
 from torchvision import models, transforms
 import torch.nn as nn
 from pycocotools import mask as mask_utils
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
 
 from Week1.src.models.ultralytics_yolo import YOLOInference
 
@@ -156,7 +153,6 @@ def main():
     print(f"\n[PRED] Running inference on {len(img_paths)} frames ...\n")
 
     all_gt_boxes   = []
-    all_pred_boxes = []
     total_preds    = 0
 
     for img_path in img_paths:
@@ -211,7 +207,7 @@ def main():
 
         # Print top-5 predictions (all classes, no filtering)
         frame_preds_sorted = sorted(frame_preds, key=lambda x: x["score"], reverse=True)
-        print(f"    Top predictions (no class filter, no conf filter):")
+        print("    Top predictions (no class filter, no conf filter):")
         if not frame_preds_sorted:
             print("      [NONE] — model returned 0 detections for this frame!")
         for p in frame_preds_sorted[:5]:
@@ -228,7 +224,7 @@ def main():
 
         # Check IoU between GT and allowed preds for this frame
         if frame_gt and allowed_preds:
-            print(f"    IoU check (GT vs allowed preds):")
+            print("    IoU check (GT vs allowed preds):")
             for gt_obj in frame_gt[:3]:
                 gt_box = gt_obj[2]
                 gt_cat = KITTI_TO_EVAL_CAT[gt_obj[0]]
@@ -253,31 +249,31 @@ def main():
 
     # ── Summary ──────────────────────────────────────────────────────────────
     print(f"{'='*60}")
-    print(f" SUMMARY")
+    print(" SUMMARY")
     print(f"  Total GT boxes  : {len(all_gt_boxes)}")
     print(f"  Total predictions (allowed classes, conf>={CONF_THR}): {total_preds}")
 
     # Check for the most common root causes:
-    print(f"\n[CHECK 1] Are there ANY predictions at all?")
+    print("\n[CHECK 1] Are there ANY predictions at all?")
     print(f"  -> {'YES' if total_preds > 0 else 'NO — model produces zero detections'}")
 
-    print(f"\n[CHECK 2] Category ID mapping")
+    print("\n[CHECK 2] Category ID mapping")
     print(f"  GT uses eval_cat IDs : { {KITTI_TO_EVAL_CAT[k] for k in KITTI_TO_EVAL_CAT} }")
     if MODEL_TYPE == "yolo":
         print(f"  YOLO maps to eval_cat: { set(YOLO_ALLOWED.values()) }")
     else:
         print(f"  FRCNN maps to eval_cat: { set(FRCNN_ALLOWED.values()) }")
 
-    print(f"\n[CHECK 3] Confidence threshold")
+    print("\n[CHECK 3] Confidence threshold")
     print(f"  Current CONF_THR={CONF_THR}. If predictions appear above "
           f"but metrics are 0, raise it slightly and re-run evaluate_coco.py.")
 
-    print(f"\n[CHECK 4] Bounding-box coordinate system")
+    print("\n[CHECK 4] Bounding-box coordinate system")
     if all_gt_boxes:
         b = all_gt_boxes[0]["bbox_xyxy"]
         print(f"  GT bbox sample (x1,y1,x2,y2): {b}  "
               f"w={b[2]-b[0]}  h={b[3]-b[1]}")
-    print(f"  (COCO eval expects [x,y,w,h] — conversion is done in evaluate_coco.py)")
+    print("  (COCO eval expects [x,y,w,h] — conversion is done in evaluate_coco.py)")
     print(f"{'='*60}\n")
 
 

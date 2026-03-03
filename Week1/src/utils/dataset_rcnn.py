@@ -1,10 +1,10 @@
+import torch
 import os
+from pycocotools import mask as mask_utils
 import glob
 import cv2
-import torch
 from torch.utils.data.dataset import Dataset
-from pycocotools import mask as mask_utils
-from src.utils.mots import load_seqmap, load_txt, filename_to_frame_nr
+from Week1.src.utils.mots import load_seqmap, load_txt, filename_to_frame_nr
 
 
 CLASS_MAPPING = {
@@ -19,16 +19,13 @@ class KittyDataset(Dataset):
         self.transform = transform
         self.image_paths = []
         self.annotations = []
-        _utils_dir = os.path.dirname(os.path.abspath(__file__))
-        if mode == "train":
-            seq_files = [os.path.join(_utils_dir, "train.seqmap")]
+        
+        if mode == "train" :
+            seq_files = ["/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/train.seqmap"]
         elif mode == "val":
-            seq_files = [os.path.join(_utils_dir, "val.seqmap")]
+            seq_files =  ["/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/val.seqmap"]
         else:
-            seq_files = [
-                os.path.join(_utils_dir, "train.seqmap"),
-                os.path.join(_utils_dir, "val.seqmap"),
-            ]
+            seq_files = ["/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/train.seqmap","/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/val.seqmap"]
         self.load_metadata(seq_files)
 
     def load_metadata(self, sequence_maps):
@@ -77,8 +74,13 @@ class KittyDataset(Dataset):
             img = torch.as_tensor(img, dtype=torch.float32).permute(2, 0, 1) / 255.0
             boxes = torch.as_tensor(target["boxes"], dtype=torch.float32)
             labels = torch.as_tensor(target["labels"], dtype=torch.int64)
-
-        return img, {"boxes": boxes, "labels": labels}
+        if len(boxes) > 0:
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+            labels = torch.as_tensor(labels, dtype=torch.int64)
+        else:
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
+            labels = torch.zeros((0,), dtype=torch.int64)
+        return img, {"boxes": boxes, "labels": labels,"image_id": torch.tensor(idx)}
 
     def __len__(self):
         return len(self.image_paths)
