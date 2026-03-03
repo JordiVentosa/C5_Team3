@@ -4,3 +4,10 @@ runs/
 *.pyc
 KITTI-MOTS
 wandb/
+
+*.pth
+*.png
+*.txt
+*.json
+*.bin
+*.safetensors

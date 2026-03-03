@@ -5,7 +5,7 @@ from torch.utils.data.dataset import Dataset
 from datasets import load_dataset
 import tqdm
 from tqdm import tqdm
-
+import json
 
 
 CLASS_MAPPING = {
@@ -18,14 +18,14 @@ CLASS_MAPPING = {
     "god the father":1,
     "shepherd":1,
     "saturno":1,
-    "judith"
+    "judith" :1
 }
 
 
 
 
 class EuropeanArtDataset(Dataset):
-    def __init__(self, mode="train", transform=None):
+    def __init__(self,  transform=None, dataset = None):
         """
         Args:
             mode (str): "train" or "validation" (HuggingFace split names)
@@ -35,8 +35,10 @@ class EuropeanArtDataset(Dataset):
         self.image_paths = []
         self.annotations = []
 
-        # Load from HuggingFace Hub
-        dataset = load_dataset("biglam/european_art", split="train[:1000]", trust_remote_code=True)
+
+
+        
+        print("done")
         self.load_metadata(dataset)
 
     def load_metadata(self, dataset):
@@ -48,11 +50,15 @@ class EuropeanArtDataset(Dataset):
             if "annotations" not in sample or sample["annotations"] is None:
                 continue
 
-            anottations = sample["anottations"]["anottations"]
+            annotations_dict = json.loads(sample["annotations"])
+            anottations = annotations_dict["annotations"]
             boxes, labels = [], []
 
-            for  annotation in anottations:
-                category = sample["annotations"]["cattegories"][annotation["id"]-1]["name"]
+            for  i,annotation in enumerate(anottations):
+
+                categ_id = annotation["category_id"]
+                
+                category = annotations_dict["categories"][categ_id-1]["name"]
                 
                 label = CLASS_MAPPING.get(category, -1)
                 
@@ -60,13 +66,14 @@ class EuropeanArtDataset(Dataset):
                     continue
                 bbox = annotation["bbox"]
                 
+                bbox[2] = bbox[2] + bbox[0]
+                bbox[3] = bbox[3] + bbox[1]
                 boxes.append(bbox)  
                 labels.append(label)
 
             if len(boxes) > 0:
                 self.image_paths.append(image)
                 self.annotations.append({"boxes": boxes, "labels": labels})
-                print("been here")
 
     def __getitem__(self, idx):
 
@@ -87,8 +94,13 @@ class EuropeanArtDataset(Dataset):
             img = torch.as_tensor(img, dtype=torch.float32).permute(2, 0, 1) / 255.0
             boxes = torch.as_tensor(target["boxes"], dtype=torch.float32)
             labels = torch.as_tensor(target["labels"], dtype=torch.int64)
-
-        return img, {"boxes": boxes, "labels": labels}
+        if len(boxes) > 0:
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+            labels = torch.as_tensor(labels, dtype=torch.int64)
+        else:
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
+            labels = torch.zeros((0,), dtype=torch.int64)
+        return img, {"boxes": boxes, "labels": labels,"image_id": torch.tensor(idx)}
 
     def __len__(self):
         return len(self.image_paths)

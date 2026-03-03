@@ -22,7 +22,10 @@ from Week1.src.models.ultralytics_yolo import YOLOInference
 from Week1.src.models.torchvision_faster_rcnn import FasterRCNNInference
 from Week1.src.utils.dataset import KittyDataset  # adjust import path as needed
 
+import os
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 # ── Dataset constants ─────────────────────────────────────────────────────────
 
 # KittyDataset already maps to COCO IDs: car→3, pedestrian→1
@@ -36,6 +39,7 @@ YOLO_ALLOWED  = {0: 1, 2: 3}
 # Torchvision Faster R-CNN (1-indexed COCO): person=1 → eval 1, car=3 → eval 3
 FRCNN_ALLOWED = {1: 1, 3: 3}
 
+model_names = ["resnet50","resnet50_v2","mobilenet_v3","mobilenet_320"]
 
 # ── Build COCO GT from KittyDataset ──────────────────────────────────────────
 
@@ -137,11 +141,12 @@ def predict_frcnn(detector, image_meta, conf_threshold=0.5):
 
 # ── COCO evaluation ───────────────────────────────────────────────────────────
 
-def run_coco_eval(coco_gt, predictions):
+def run_coco_eval(coco_gt, predictions, output_file="coco_eval_results.txt"):
     """
-    Runs COCOeval and prints:
-      - Standard 12-metric summary (overall)
-      - Per-category table with all 12 metrics
+    Runs COCOeval and:
+      - Prints standard 12-metric summary (overall)
+      - Prints per-category table with all 12 metrics
+      - Saves the same content to a text file
     """
     if not predictions:
         print("[ERROR] No predictions to evaluate.")
@@ -149,43 +154,66 @@ def run_coco_eval(coco_gt, predictions):
 
     coco_pred = coco_gt.loadRes(predictions)
 
-    print("\n── Overall COCO bbox metrics ───────────────────────────────")
-    coco_eval = COCOeval(coco_gt, coco_pred, iouType="bbox")
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    coco_eval.summarize()
+    with open(output_file, "w", encoding="utf-8") as f:
 
-    metric_names = [
-        "AP[.5:.95]", "AP@.50", "AP@.75",
-        "AP@small",   "AP@med", "AP@large",
-        "AR@1",       "AR@10",  "AR@100",
-        "AR@small",   "AR@med", "AR@large",
-    ]
-    print("\n── Per-category COCO metrics ───────────────────────────────")
-    header = f"{'Category':<15}" + "".join(f"{m:>12}" for m in metric_names)
-    print(header)
-    print("─" * len(header))
+        print("\n── Overall COCO bbox metrics ───────────────────────────────")
+        f.write("\n── Overall COCO bbox metrics ───────────────────────────────\n")
 
-    for cat in EVAL_CAT_INFO:
-        ev = COCOeval(coco_gt, coco_pred, iouType="bbox")
-        ev.params.catIds = [cat["id"]]
-        ev.evaluate()
-        ev.accumulate()
+        coco_eval = COCOeval(coco_gt, coco_pred, iouType="bbox")
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+
+        # Capture summarize() output
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            ev.summarize()
-        row = f"{cat['name']:<15}" + "".join(f"{v:>12.4f}" for v in ev.stats)
-        print(row)
+            coco_eval.summarize()
+        summary_text = buf.getvalue()
 
-    print("────────────────────────────────────────────────────────────\n")
+        print(summary_text)
+        f.write(summary_text)
+
+        metric_names = [
+            "AP[.5:.95]", "AP@.50", "AP@.75",
+            "AP@small",   "AP@med", "AP@large",
+            "AR@1",       "AR@10",  "AR@100",
+            "AR@small",   "AR@med", "AR@large",
+        ]
+
+        print("\n── Per-category COCO metrics ───────────────────────────────")
+        f.write("\n── Per-category COCO metrics ───────────────────────────────\n")
+
+        header = f"{'Category':<15}" + "".join(f"{m:>12}" for m in metric_names)
+        print(header)
+        print("─" * len(header))
+        f.write(header + "\n")
+        f.write("─" * len(header) + "\n")
+
+        for cat in EVAL_CAT_INFO:
+            ev = COCOeval(coco_gt, coco_pred, iouType="bbox")
+            ev.params.catIds = [cat["id"]]
+            ev.evaluate()
+            ev.accumulate()
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                ev.summarize()
+
+            row = f"{cat['name']:<15}" + "".join(f"{v:>12.4f}" for v in ev.stats)
+            print(row)
+            f.write(row + "\n")
+
+        print("────────────────────────────────────────────────────────────\n")
+        f.write("────────────────────────────────────────────────────────────\n\n")
+
+    print(f"[INFO] Results saved to {output_file}")
+
     return coco_eval
-
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    BASE_DIR   = "/home/msiau/workspace/jventosa/PostTFG/Master/C5_Team3/Week1/datasets/KITTI-MOTS"
-    MODEL_TYPE = "yolo"   # "yolo" | "frcnn"
+    BASE_DIR   = "/home/msiau/data/tmp/agarciat/MCVC/C5/KITTI-MOTS"
+    MODEL_TYPE = "frcnn"   # "yolo" | "frcnn"
     RUN_SPLIT  = "all"  # "train" | "val"  ← matches KittyDataset mode arg
     CONF_THR   = 0.5
 
@@ -206,21 +234,27 @@ def main():
         detector = YOLOInference(model_version="yolov8x.pt")
         print(f"Running YOLO predictions  [conf>={CONF_THR}] ...")
         predictions = predict_yolo(detector, image_meta, conf_threshold=CONF_THR)
+        print(f"  Total detections      : {len(predictions)}")
+        print(f"  Prediction categories : {sorted({p['category_id'] for p in predictions})}")
+
+        print(f"\n── COCO Evaluation  |  model={MODEL_TYPE}  split={RUN_SPLIT} ──")
+        run_coco_eval(coco_gt, predictions)
 
     elif MODEL_TYPE == "frcnn":
-        print("\nLoading Faster R-CNN (ResNet-50 FPN) ...")
-        detector = FasterRCNNInference(conf_threshold=CONF_THR)
-        print(f"Running Faster R-CNN predictions  [conf>={CONF_THR}] ...")
-        predictions = predict_frcnn(detector, image_meta, conf_threshold=CONF_THR)
+        for model_name in model_names:
+            print("\nLoading Faster R-CNN (ResNet-50 FPN) ...")
+            detector = FasterRCNNInference(conf_threshold=CONF_THR,model_name=model_name)
+            print(f"Running Faster R-CNN predictions  [conf>={CONF_THR}] ...")
+            predictions = predict_frcnn(detector, image_meta, conf_threshold=CONF_THR)
+            print(f"  Total detections      : {len(predictions)}")
+            print(f"  Prediction categories : {sorted({p['category_id'] for p in predictions})}")
 
+            print(f"\n── COCO Evaluation  |  model={MODEL_TYPE}  split={RUN_SPLIT} ──")
+            run_coco_eval(coco_gt, predictions,output_file= f"{model_name}.txt")
     else:
         raise ValueError(f"Unknown MODEL_TYPE '{MODEL_TYPE}'. Use 'yolo' or 'frcnn'.")
 
-    print(f"  Total detections      : {len(predictions)}")
-    print(f"  Prediction categories : {sorted({p['category_id'] for p in predictions})}")
-
-    print(f"\n── COCO Evaluation  |  model={MODEL_TYPE}  split={RUN_SPLIT} ──")
-    run_coco_eval(coco_gt, predictions)
+    
 
 
 if __name__ == "__main__":

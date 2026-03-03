@@ -15,18 +15,18 @@ from Week1.src.utils.mots import load_seqmap, load_txt, filename_to_frame_nr
 
 
 CLASS_MAPPING = {
-    1: 3,  # car → COCO car
-    2: 1,  # pedestrian → COCO person
+    1: 0,  # car → index 0
+    2: 1,  # pedestrian → index 1
 }
 
 
 class KittyDataset(Dataset):
-    def __init__(self, root_dir, mode="train", transform=None):
+    def __init__(self, root_dir,image_processor, mode="train", transform=None,):
         self.root_dir = root_dir
         self.transform = transform
         self.image_paths = []
         self.annotations = []
-        
+        self.image_processor = image_processor
         if mode == "train" :
             seq_files = ["/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/train.seqmap"]
         elif mode == "val":
@@ -34,6 +34,26 @@ class KittyDataset(Dataset):
         else:
             seq_files = ["/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/train.seqmap","/home/msiau/workspace/Master/C5_Team3/Week1/src/utils/val.seqmap"]
         self.load_metadata(seq_files)
+
+    @staticmethod
+    def format_image_annotations_as_coco(image_id, old_annotations):
+
+        annotations = []
+        for box,label in zip(old_annotations[0],old_annotations[1]):
+            
+            formatted_annotation = {
+                "image_id": image_id,
+                "category_id": label,
+                "bbox": list(box),
+                "iscrowd": 0,
+                "area": box[2] * box[3],
+            }
+            annotations.append(formatted_annotation)
+
+        return {
+            "image_id": image_id,
+            "annotations": annotations,
+        }
 
     def load_metadata(self, sequence_maps):
         for seqmap in sequence_maps:
@@ -51,12 +71,12 @@ class KittyDataset(Dataset):
                     for obj in text[frame]:
                         if obj.class_id not in CLASS_MAPPING: continue
                         x, y, w, h = mask_utils.toBbox(obj.mask)
-                        boxes.append([x, y, x + w, y + h]) # Pascal_VOC format
+                        boxes.append([x, y, w, h]) # Coco format
                         labels.append(CLASS_MAPPING[obj.class_id])
 
                     if len(boxes) > 0:
                         self.image_paths.append(image_path)
-                        self.annotations.append({"boxes": boxes, "labels": labels})
+                        self.annotations.append(( boxes,  labels))
 
     def __getitem__(self, idx):
         # Read image
@@ -65,27 +85,24 @@ class KittyDataset(Dataset):
         
         target = self.annotations[idx]
         
-        if self.transform:
-            transformed = self.transform(
-                image=img,
-                bboxes=target["boxes"],
-                labels=target["labels"]
-            )
-            img = transformed["image"]
-            boxes = torch.as_tensor(transformed["bboxes"], dtype=torch.float32)
-            labels = torch.as_tensor(transformed["labels"], dtype=torch.int64)
-        else:
-            # Default conversion if no transform is provided
-            img = torch.as_tensor(img, dtype=torch.float32).permute(2, 0, 1) / 255.0
-            boxes = torch.as_tensor(target["boxes"], dtype=torch.float32)
-            labels = torch.as_tensor(target["labels"], dtype=torch.int64)
-        if len(boxes) > 0:
-            boxes = torch.as_tensor(boxes, dtype=torch.float32)
-            labels = torch.as_tensor(labels, dtype=torch.int64)
-        else:
-            boxes = torch.zeros((0, 4), dtype=torch.float32)
-            labels = torch.zeros((0,), dtype=torch.int64)
-        return img, {"boxes": boxes, "labels": labels,"image_id": torch.tensor(idx)}
+        transformed = self.transform(
+            image=img,
+            bboxes=target[0],
+            class_labels=target[1]
+        )
+        img = transformed["image"]
+        boxes = torch.as_tensor(transformed["bboxes"], dtype=torch.float32)
+        categories = torch.as_tensor(transformed["class_labels"], dtype=torch.int64)
+        
+        formatted_annotations = self.format_image_annotations_as_coco(idx, (boxes,categories))
+        
+        result = self.image_processor(
+            images=img, annotations=formatted_annotations, return_tensors="pt"
+        )
+        
+        result = {k: v[0] for k, v in result.items()}
+
+        return result
 
     def __len__(self):
         return len(self.image_paths)

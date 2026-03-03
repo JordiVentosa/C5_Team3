@@ -4,11 +4,21 @@ import torch.nn as nn
 import cv2
 
 class FasterRCNNInference(nn.Module):
-    def __init__(self, conf_threshold=0.5, device=None):
+    def __init__(self, conf_threshold=0.5, device=None,model_name = "resnet50"):
         super(FasterRCNNInference, self).__init__()
         self.conf_threshold = conf_threshold
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+        if model_name == "resnet50":
+            self.model = models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+        elif model_name == "resnet50_v2":
+            self.model = models.detection.fasterrcnn_resnet50_fpn_v2(pretrained=True)
+        elif model_name == "mobilenet_v3":
+            self.model = models.detection.fasterrcnn_mobilenet_v3_large_fpn(pretrained=True)
+        elif model_name == "mobilenet_320":
+            self.model = models.detection.fasterrcnn_mobilenet_v3_large_320_fpn(pretrained=True)
+        else:
+            self.model = models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+
         self.model.to(self.device)
         self.model.eval()
 
