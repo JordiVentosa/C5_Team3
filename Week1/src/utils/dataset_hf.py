@@ -8,8 +8,8 @@ from Week1.src.utils.mots import load_seqmap, load_txt, filename_to_frame_nr
 
 
 CLASS_MAPPING = {
-    1: 0,  # car → index 0
-    2: 1,  # pedestrian → index 1
+    1: 2,  # car → COCO car
+    2: 0,  # pedestrian → COCO person
 }
 
 

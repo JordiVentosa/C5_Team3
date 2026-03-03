@@ -13,7 +13,7 @@ from Week1.src.utils.evaluate import MAPEvaluator
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 def get_args():
     parser = argparse.ArgumentParser(description="Fine-tune Faster R-CNN on DeArt")
@@ -73,15 +73,13 @@ def main():
     use_fast=True,
     )
     
-    id2label = {0: "car", 1: "person"}
-    label2id = {"car": 0, "person": 1}
+   
     model = AutoModelForObjectDetection.from_pretrained(
         checkpoint,
-        id2label=id2label,
-        label2id=label2id,
-        ignore_mismatched_sizes=True,
+
     )
     model.to(device)
+    
     def collate_fn(batch):
         data = {}
         data["pixel_values"] = torch.stack([x["pixel_values"] for x in batch])
@@ -108,11 +106,14 @@ def main():
 
     training_args = TrainingArguments(
         output_dir=f"rtdetr-v2-r50-cppe5-finetune-2_{args.config_id}",
-        num_train_epochs=40,
+        num_train_epochs=args.epochs,
         max_grad_norm=0.1,
-        learning_rate=5e-5,
+        learning_rate=args.lr,
         warmup_steps=300,
-        per_device_train_batch_size=3,
+        per_device_train_batch_size=1, # Keep at 1 for VRAM
+        per_device_eval_batch_size=1,  # Keep at 1 for VRAM
+        gradient_accumulation_steps=args.batch_size // 1, 
+        fp16=True,                     # CRITICAL: Reduces VRAM usage by ~50%
         dataloader_num_workers=2,
         metric_for_best_model="eval_map",
         greater_is_better=True,
@@ -122,11 +123,11 @@ def main():
         save_total_limit=2,
         remove_unused_columns=False,
         eval_do_concat_batches=False,
-        report_to="wandb",  # or "wandb"
+        report_to="wandb",
     )
     
     from transformers import Trainer
-    eval_compute_metrics_fn = MAPEvaluator(image_processor=processor, threshold=0.01, id2label=id2label)
+    eval_compute_metrics_fn = MAPEvaluator(image_processor=processor, threshold=0.01)
     
     trainer = Trainer(
         model=model,
@@ -137,11 +138,16 @@ def main():
         data_collator=collate_fn,
         compute_metrics=eval_compute_metrics_fn,
     )
-
-    trainer.train()
+    
+    print("***** Running evaluation before fine-tuning *****")
+    pre_train_metrics = trainer.evaluate(eval_dataset=val_dataset, metric_key_prefix="pre_train")
     
     from pprint import pprint
-
+    pprint(pre_train_metrics)
+ 
+    trainer.train()
+    
+    
     metrics = trainer.evaluate(eval_dataset=val_dataset, metric_key_prefix="eval")
     pprint(metrics)
     
