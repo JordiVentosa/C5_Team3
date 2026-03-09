@@ -161,9 +161,9 @@ def save_results(output_dir, split, model_version, predictions, coco_eval, per_c
             f.write(f"{cat_name:<15}" + "".join(f"{v:>12.4f}" for v in stats.values()) + "\n")
 
     print(f"\n  Results saved to: {output_dir}")
-    print(f"    predictions.json")
-    print(f"    metrics.json")
-    print(f"    summary.txt")
+    print("    predictions.json")
+    print("    metrics.json")
+    print("    summary.txt")
 
 
 def parse_args():
@@ -183,7 +183,7 @@ def main():
     timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(args.output_dir, f"{args.split}_{timestamp}")
 
-    print(f"\n── YOLO Evaluation on KITTI-MOTS ──────────────────────────")
+    print("\n── YOLO Evaluation on KITTI-MOTS ──────────────────────────")
     print(f"  Model : {args.model}")
     print(f"  Split : {args.split}")
     print(f"  Conf  : {args.conf}")

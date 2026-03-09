@@ -1,7 +1,6 @@
 import os
 import glob
 import cv2
-import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from pycocotools import mask as mask_utils
@@ -42,11 +41,13 @@ class KittyDataset(Dataset):
                 
                 for image_path in sorted(glob.glob(os.path.join(seq_path_folder, "*.png"))):
                     frame = filename_to_frame_nr(os.path.basename(image_path))
-                    if frame not in text: continue
+                    if frame not in text: 
+                        continue
 
                     boxes, labels = [], []
                     for obj in text[frame]:
-                        if obj.class_id not in CLASS_MAPPING: continue
+                        if obj.class_id not in CLASS_MAPPING: 
+                            continue
                         x, y, w, h = mask_utils.toBbox(obj.mask)
                         boxes.append([x, y, x + w, y + h]) # Pascal_VOC format
                         labels.append(CLASS_MAPPING[obj.class_id])

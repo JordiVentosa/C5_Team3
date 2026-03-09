@@ -1,0 +1,13 @@
+datasets/
+runs/
+*.pt
+*.pyc
+KITTI-MOTS
+wandb/
+
+*.pth
+*.png
+*.txt
+*.json
+*.bin
+*.safetensors
