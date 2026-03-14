@@ -1,0 +1,11 @@
+dataset:
+  root:    /ghome/group03/mcv/datasets/C5/KITTI-MOTS
+  split:   val
+ 
+model:
+  type:   sam
+  name:   facebook/sam-vit-huge
+ 
+evaluation:
+  type:       point_prompt
+  output_dir: results/points

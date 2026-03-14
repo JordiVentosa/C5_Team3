@@ -1,0 +1,17 @@
+dataset:
+  root:    /ghome/group03/mcv/datasets/C5/KITTI-MOTS
+  split:   val
+ 
+model:
+  type:             grounded_sam
+  grounding_model:  IDEA-Research/grounding-dino-tiny
+  sam_model:        facebook/sam-vit-huge
+ 
+evaluation:
+  type:       bbox_grounded
+  output_dir: results/grounded_sam
+  prompts:
+    1: "car"
+    2: "pedestrian"
+  box_threshold:  0.3
+  text_threshold: 0.25

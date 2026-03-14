@@ -1,0 +1,12 @@
+dataset:
+  root:    /ghome/group03/mcv/datasets/C5/KITTI-MOTS
+  split:   val
+ 
+model:
+  type:   sam
+  name:   facebook/sam-vit-huge
+ 
+inference:
+  type:       point_prompt
+  output_dir: results/inference/points
+  index_list : [400, 782, 2000]
