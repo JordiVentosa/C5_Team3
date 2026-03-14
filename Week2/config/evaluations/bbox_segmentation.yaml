@@ -1,0 +1,13 @@
+dataset:
+  root:    /ghome/group03/mcv/datasets/C5/KITTI-MOTS
+  split:   val
+ 
+model:
+  type:   sam
+  name:   facebook/sam-vit-huge
+ 
+evaluation:
+  type:         bbox_detection
+  output_dir:   results/bbox_detection
+  confidence:   0.5
+  # yolo_weights: /path/to/custom.pt  # omit to use yolo26x pretrained
