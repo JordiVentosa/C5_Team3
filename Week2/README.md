@@ -8,18 +8,18 @@ Team 3 repository for the [C5 — Visual Recognition](https://mcv.uab.cat/c5-vis
 
 ## Overview
 
-This project covers **object segmentation** on the [KITTI-MOTS](https://www.cvlibs.net/datasets/kitti/) dataset using SAM (https://huggingface.co/docs/transformers/tasks/object_detection) with different types of prompts (points, text, bbox...)
+This project implements **instance segmentation** on the [KITTI-MOTS](https://www.cvlibs.net/datasets/kitti/) dataset using SAM ([Segment Anything Model](https://huggingface.co/docs/transformers/main/en/model_doc/sam)) with different types of prompts: point-based, text-based (Grounded SAM), and automatic fine-tuning.
 
-The following tasks are implemented:
+### Implemented Tasks
 
-| Task | Description |
-|---|---|
-| **A** | SAM inference with point prompts |
-| **B** | Grounded SAM inference with text prompts |
-| **C** | SAM inference with YOLO bboxes |
-| **E** | Fine-tune the Prompt-Decoder of SAM |
-| **F** | Pre-trained SAM and the finetuned version domain shift |
-| **H** | Semantic Segmentation |
+| Task | Description | Status |
+|---|---|---|
+| **A** | SAM inference with point prompts
+| **B** | Grounded SAM + Grounding DINO with text prompts
+| **C** | SAM inference with YOLO bounding box prompts
+| **E** | Fine-tune SAM's Prompt Decoder using LoRA
+| **F** | Domain shift evaluation: pre-trained vs fine-tuned on iSAID
+| **H** | Semantic segmentation using Grounded SAM
 
 ---
 
@@ -29,23 +29,41 @@ The following tasks are implemented:
 Week2/
 ├── config/                         # Experiment configuration files
 ├── src/                            # Reusable project source code
+│   ├── models/                     # Model definitions and utilities
+│   ├── utils/                      # Common utilities
+│   ├── evaluate.py                 # Common evaluation functions
+│   ├── inference.py                # Common inference functions
+│   └── runners.py                  # Common runners for pipelines
+├── task_e_and_f/                   # Tasks E & F — Fine-tuning and domain shift
+│   ├── train_sam.py               # Fine-tune SAM prompt decoder with LoRA
+│   ├── inference_domain_shift.py  # Evaluate pre-trained vs fine-tuned on domain shift
+│   ├── dataset.py                 # KITTI-MOTS dataset loader
+│   ├── augmentations.py           # Data augmentation strategies
+│   ├── evaluators.py              # COCO evaluation metrics
+│   ├── collate.py                 # DataLoader collate functions
+│   ├── prompts.py                 # Prompt generation utilities
+│   ├── visualization.py           # Visualization helpers
+│   ├── SAM_Analysis.ipynb         # Analysis notebook for SAM behavior
+│   ├── evaluate_pretrained.py     # Evaluation pipeline for pre-trained SAM
+│   ├── evaluate_all_prompts.py    # Evaluation with different prompt types
+│   ├── qualitative_examples_ft.py # Qualitative examples from fine-tuned model
+│   └── [shell scripts]            # Helper scripts for running experiments (dshift*.sh, evallprompts*.sh, etc.)
 ├── .gitignore                      # Git ignored files rules
 ├── evaluate_job.sbatch             # SLURM script to launch evaluation on a cluster
-├── README.md                       # Project documentation, usage, and instructions
-├── taskA.py                        # Task A — Inference of pretrained SAM with point prompts
-├── taskAQuantitative.py            # Task A — Quantitative evaluation of results
-├── taskB.py                        # Task B — Inference with text prompts (Grounded SAM)
-├── taskH.py                        # Task H — Semantic segmentation (optional)
-└── taskHQuantitative.py            # Task H — Quantitative evaluation of semantic segmentation
+├── README.md                       # This file
+├── taskA.py                        # Task A — SAM inference with point prompts
+├── taskAQuantitative.py            # Task A — Quantitative evaluation with COCO metrics
+├── taskB.py                        # Task B — Grounded SAM with text prompts
+├── taskH.py                        # Task H — Semantic segmentation with Grounded SAM
+└── taskHQuantitative.py            # Task H — Quantitative evaluation with COCO metrics
 ```
 
 ---
 
 ## Usage
 
-All scripts are meant to be run from the **repository root** (the parent of `Week1/`). Most scripts accept `--help` for a full list of arguments.
+All scripts are meant to be run from the **repository root** (the parent of `Week2/`), except scripts from the `task_e_and_f` folder. Most scripts accept `--help` for a full list of arguments.
 
----
 
 ## Dataset
 
@@ -57,24 +75,43 @@ KITTI-MOTS/
 │   └── image_02/
 │       ├── 0000/
 │       ├── 0001/
-│       └── ...
+│       └── ... (sequences up to 0020)
 ├── testing/
 │   └── image_02/
 ├── instances/          # Instance segmentation masks — training only
 └── instances_txt/      # Instance annotations (TXT) — training only
 ```
 
-> Ground-truth annotations are **only available for the training split** (21 sequences). We divide it into train (seqs 0000–0015) and validation (seqs 0016–0020) using `src/utils/train.seqmap` and `src/utils/val.seqmap`. The testing split is used only for qualitative evaluation.
+### Data Split
 
-For domain-shift experiments (Task F), the [DEArt (European Art)](https://huggingface.co/datasets/biglam/european_art) dataset is loaded automatically from HuggingFace Hub.
+Ground-truth annotations are **only available for the training split** (21 sequences):
+- **Training:** Sequences 0000–0015 (16 sequences)
+- **Validation:** Sequences 0016–0020 (5 sequences)
+
+See `src/utils/train.seqmap` and `src/utils/val.seqmap` for the split definition.
+
+The testing split (sequences 0021+) is used only for qualitative evaluation as no ground-truth is available.
+
+### Domain Shift Dataset
+
+For Task F (domain shift evaluation), the [iSAID](https://captain-whu.github.io/DiRS/) dataset is automatically downloaded from HuggingFace Hub during the first run of `inference_domain_shift.py`.
 
 ---
 
-## Evaluation
+## Evaluation Metrics
 
 All quantitative evaluations use the official **COCO metrics** via `pycocotools`:
 
-- AP @ IoU=0.50:0.95, AP @ 0.50, AP @ 0.75
-- AP for small / medium / large objects
-- AR @ 1, 10, 100 detections
-- AR for small / medium / large objects
+- **AP (Average Precision)** @ IoU thresholds: 0.50:0.95, 0.50, 0.75
+- **AP for object sizes:** small, medium, large objects
+- **AR (Average Recall)** @ different detection counts: 1, 10, 100
+- **AR for object sizes:** small, medium, large objects
+
+These metrics are computed for both instance and semantic segmentation tasks.
+
+### Dependencies
+
+Install them via:
+```bash
+pip install -r requirements.txt
+```
