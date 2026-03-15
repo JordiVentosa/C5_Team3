@@ -11,4 +11,4 @@ inference:
   output_dir:   results/inference/bbox_detection
   confidence:   0.5
   # yolo_weights: /path/to/custom.pt  # omit to use yolo26x pretrained
-  index_list : [0, 150]
+  index_list : [2712]

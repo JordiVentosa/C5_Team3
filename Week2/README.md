@@ -64,6 +64,24 @@ Week2/
 
 All scripts are meant to be run from the **repository root** (the parent of `Week2/`), except scripts from the `task_e_and_f` folder. Most scripts accept `--help` for a full list of arguments.
 
+### Task b and c evaluation and inference
+
+To evaluate and obtain metrics for these task you must do:
+```
+python src/evaluate.py --config /path/to/config/yaml
+```
+
+The configuration files for task b and c evaluations are found inside config/evaluations. These contain some parameters that can be tweaked, such as the model used or some thresholds or values that are specific for the used models.
+
+To do inference a similar thing must be done:
+```
+python src/inference.py --config /path/to/config/yaml
+```
+
+The configuration files for task b and c inference are found inside config/inference.
+In this case, to change the image or images to which you want to do inference, you just need to change the index_values list inside the configurations.
+
+Both inference and evaluation configurations allows to specify the root folder for KITTI-MOTS, the split to use, and the output folder where the results will be dumped. If the output folder does not exists, it is created.
 
 ## Dataset
 
@@ -109,7 +127,7 @@ All quantitative evaluations use the official **COCO metrics** via `pycocotools`
 
 These metrics are computed for both instance and semantic segmentation tasks.
 
-### Dependencies
+## Dependencies
 
 Install them via:
 ```bash

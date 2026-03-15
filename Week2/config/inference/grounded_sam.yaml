@@ -15,4 +15,4 @@ inference:
     2: "pedestrian"
   box_threshold:  0.3
   text_threshold: 0.25
-  index_list : [0, 150]
+  index_list : [2712]

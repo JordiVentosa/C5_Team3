@@ -6,4 +6,4 @@
 #SBATCH -e logs/%x_%u_%j.err # File to which STDERR will be written
 
 # Run your program
-python src/evaluate.py --config config/evaluations/point_segmentation.yaml
+python src/evaluate.py --config config/evaluations/bbox_segmentation.yaml

@@ -9,7 +9,7 @@ model:
  
 evaluation:
   type:       bbox_grounded
-  output_dir: results/evaluation/grounded_sam
+  output_dir: results/evaluation/grounded_sam_class
   prompts:
     1: "car"
     2: "pedestrian"

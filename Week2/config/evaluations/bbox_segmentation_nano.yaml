@@ -4,10 +4,10 @@ dataset:
  
 model:
   type:   sam
-  name:   facebook/sam-vit-huge
+  name:   facebook/sam-vit-base
  
 evaluation:
   type:         bbox_detection
-  output_dir:   results/evaluation/bbox_detection_nano
+  output_dir:   results/evaluation/bbox_detection_nano_base
   confidence:   0.5
   yolo_weights: yolo26n.pt  # omit to use yolo26x pretrained
