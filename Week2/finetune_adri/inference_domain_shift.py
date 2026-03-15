@@ -5,14 +5,13 @@ from tqdm import tqdm
 from datasets import load_dataset, load_from_disk
 from torch.utils.data import Dataset, DataLoader
 from transformers import SamModel, SamProcessor
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
-from pycocotools import mask as mask_utils
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from peft import PeftModel
 import scipy.ndimage as ndimage
 import gc
+
+from evaluators import HF_COCOEvaluatorSingleClass as HF_COCOEvaluator
+from collate import collate_fn_boxes_only as collate_fn
+from visualization import save_visualization_basic as save_visualization
 
 FT_MODEL_PATH = "models/da_config_1/best_model"
 LORA_MODEL_PATH = "models/lora_da_config_1/best_model"
@@ -25,47 +24,6 @@ BATCH_SIZE = 1
 CPU_WORKERS = 4
 MAX_OBJECTS_PER_IMAGE = 100
 
-class HF_COCOEvaluator:
-    def __init__(self):
-        self.coco_gt = COCO()
-        self.dataset = {"images": [], "annotations": [], "categories": [{"id": 1, "name": "Object"}]}
-        self.ann_id = 1
-        self.preds = []
-
-    def add_gt_batch(self, image_id, image_size, valid_boxes, valid_masks):
-        self.dataset["images"].append({"id": int(image_id), "width": image_size[1], "height": image_size[0], "file_name": str(image_id)})
-        for box, mask in zip(valid_boxes, valid_masks):
-            mask = np.asfortranarray(mask.astype(np.uint8))
-            rle = mask_utils.encode(mask)
-            rle['counts'] = rle['counts'].decode('utf-8')
-            x1, y1, x2, y2 = map(float, box)
-            self.dataset["annotations"].append({
-                "id": self.ann_id, "image_id": int(image_id), "category_id": 1,
-                "bbox": [x1, y1, x2 - x1, y2 - y1], "segmentation": rle,
-                "area": float(mask_utils.area(rle)), "iscrowd": 0
-            })
-            self.ann_id += 1
-
-    def init_gt(self):
-        self.coco_gt.dataset = self.dataset
-        self.coco_gt.createIndex()
-
-    def add_pred_batch(self, image_id, pred_masks):
-        for mask in pred_masks:
-            mask = np.asfortranarray((mask > 0.5).astype(np.uint8)) 
-            rle = mask_utils.encode(mask)
-            rle['counts'] = rle['counts'].decode('utf-8')
-            self.preds.append({"image_id": int(image_id), "category_id": 1, "segmentation": rle, "score": 1.0})
-
-    def evaluate(self):
-        if len(self.preds) == 0: 
-            return None
-        coco_dt = self.coco_gt.loadRes(self.preds)
-        coco_eval = COCOeval(self.coco_gt, coco_dt, iouType="segm")
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
-        return coco_eval.stats
 
 def extract_boxes_and_masks(ins_image, max_objects=None):
     """Extract bounding boxes and masks using scipy's C-optimized functions."""
@@ -119,67 +77,6 @@ class ISAIDDatasetWrapper(Dataset):
         boxes, true_masks = extract_boxes_and_masks(sample['ins'], max_objects=MAX_OBJECTS_PER_IMAGE)
         return {"image": image, "boxes": boxes, "masks": true_masks, "image_id": idx + 1}
 
-def collate_fn(batch, processor):
-    batch = [b for b in batch if b is not None and len(b['boxes']) > 0]
-    if len(batch) == 0: return None
-    
-    images = [b["image"] for b in batch]
-    orig_boxes = [b["boxes"] for b in batch]
-    orig_masks = [b["masks"] for b in batch]
-    image_ids = [b["image_id"] for b in batch]
-    
-    valid_lengths = [len(boxes) for boxes in orig_boxes]
-    max_objects = max(valid_lengths)
-    
-    padded_boxes = []
-    for i in range(len(batch)):
-        pad_len = max_objects - valid_lengths[i]
-        # Pad with dummy boxes
-        b_boxes = orig_boxes[i] + [[0.0, 0.0, 0.0, 0.0]] * pad_len
-        padded_boxes.append(b_boxes)
-        
-    inputs = processor(images=images, input_boxes=padded_boxes, return_tensors="pt")
-    
-    return inputs, orig_boxes, orig_masks, image_ids, valid_lengths, images
-
-def save_visualization(image, boxes, pred_masks, true_masks, model_name, img_id, output_dir):
-    """Save 5 visualization variations for qualitative analysis."""
-    image = np.array(image)
-    safe_name = model_name.replace(" ", "_").replace("(", "").replace(")", "")
-    np.random.seed(img_id)
-    
-    num_objects = max(len(pred_masks), len(true_masks))
-    colors = np.random.rand(num_objects, 3)
-    
-    pred_overlay = np.zeros((image.shape[0], image.shape[1], 4))
-    if len(pred_masks) > 0:
-        for idx, mask in enumerate(pred_masks):
-            pred_overlay[mask > 0.5] = np.append(colors[idx], 0.75)
-
-    gt_overlay = np.zeros((image.shape[0], image.shape[1], 4))
-    if len(true_masks) > 0:
-        for idx, mask in enumerate(true_masks):
-            gt_overlay[mask > 0.5] = np.append(colors[idx], 0.75)
-
-    def save_fig(img, overlay=None, draw_boxes=False, suffix=""):
-        fig, ax = plt.subplots(1, figsize=(10, 10))
-        ax.imshow(img)
-        if overlay is not None:
-            ax.imshow(overlay)
-        if draw_boxes:
-            for box in boxes:
-                x_min, y_min, x_max, y_max = box
-                ax.add_patch(patches.Rectangle((x_min, y_min), x_max - x_min, y_max - y_min,
-                                             linewidth=1.5, edgecolor='r', facecolor='none'))
-        plt.axis('off')
-        plt.savefig(os.path.join(output_dir, f"img_{img_id:03d}_{safe_name}_{suffix}.png"), bbox_inches='tight', pad_inches=0, dpi=150)
-        plt.close(fig)
-
-    save_fig(image, suffix="1_original")
-    save_fig(image, draw_boxes=True, suffix="2_bboxes")
-    save_fig(image, overlay=pred_overlay, suffix="3_pred_masks")
-    save_fig(image, overlay=pred_overlay, draw_boxes=True, suffix="4_combined")
-    save_fig(image, overlay=gt_overlay, suffix="5_gt_masks")
 
 def evaluate_model(model, processor, dataloader, name="Model"):
     print(f"Evaluating {name}")
