@@ -11,3 +11,7 @@ wandb/
 *.json
 *.bin
 *.safetensors
+*.arrow
+
+logs/
+models/
