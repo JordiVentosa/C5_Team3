@@ -7,6 +7,8 @@ model:
   name:   facebook/sam-vit-huge
  
 inference:
-  type:       point_prompt
-  output_dir: results/inference/points
+  type:         bbox_detection
+  output_dir:   results/inference/bbox_detection_nano
+  confidence:   0.5
+  yolo_weights: yolo26n.pt  # omit to use yolo26x pretrained
   index_list : [0, 150]

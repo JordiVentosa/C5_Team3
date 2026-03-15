@@ -8,6 +8,6 @@ model:
  
 evaluation:
   type:         bbox_detection
-  output_dir:   results/evaluation/bbox_detection
+  output_dir:   results/evaluation/bbox_detection_nano
   confidence:   0.5
-  # yolo_weights: yolo26n.pt  # omit to use yolo26x pretrained
+  yolo_weights: yolo26n.pt  # omit to use yolo26x pretrained

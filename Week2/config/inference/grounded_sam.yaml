@@ -1,6 +1,6 @@
 dataset:
   root:    /ghome/group03/mcv/datasets/C5/KITTI-MOTS
-  split:   val
+  split:   train
  
 model:
   type:             grounded_sam
@@ -15,4 +15,4 @@ inference:
     2: "pedestrian"
   box_threshold:  0.3
   text_threshold: 0.25
-  index_list : [400, 782, 2000]
+  index_list : [0, 150]
