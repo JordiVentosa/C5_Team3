@@ -8,4 +8,4 @@ model:
  
 evaluation:
   type:       point_prompt
-  output_dir: results/points
+  output_dir: results/evaluation/points
