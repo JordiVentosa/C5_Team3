@@ -1,4 +1,3 @@
-datasets/
 runs/
 *.pt
 *.pyc
@@ -14,4 +13,3 @@ wandb/
 *.arrow
 
 logs/
-models/
