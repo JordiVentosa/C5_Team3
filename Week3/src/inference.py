@@ -3,7 +3,7 @@ from pathlib import Path
 import argparse
 from PIL import Image
 
-from models.model import Model
+from models.baseline import Baseline
 from models.train_wrapper import CaptioningModule
 
 
@@ -26,7 +26,7 @@ def main(args):
     print(f"Using device: {device}")
     
     print(f"Loading model from {args.checkpoint}...")
-    model = Model(device=device, resnet_model=args.resnet_model)
+    model = Baseline(device=device, resnet_model=args.resnet_model)
     module = CaptioningModule(model=model, device=device)
     
     if Path(args.checkpoint).exists():

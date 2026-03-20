@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse
 from tqdm import tqdm
 
-from models.model import Model
+from models.baseline import Baseline
 from models.train_wrapper import CaptioningModule
 from datasets.vizwiz_dataset import VizWizDataset
 
@@ -45,8 +45,7 @@ def validate(module, dataloader):
         progress_bar.set_postfix({'loss': f'{loss:.4f}'})
     
     avg_loss = total_loss / num_batches
-    subset_size = min(100, len(all_predictions))
-    metrics = module.compute_metrics(all_predictions[:subset_size], all_references[:subset_size])
+    metrics = module.compute_metrics(all_predictions, all_references)
     
     return avg_loss, metrics
 
@@ -67,8 +66,13 @@ def main(args):
     print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
     
     print("Creating model...")
-    model = Model(device=device, resnet_model=args.resnet_model)
-    module = CaptioningModule(model=model, learning_rate=args.learning_rate, device=device)
+    model = Baseline(device=device, resnet_model=args.resnet_model)
+    module = CaptioningModule(
+        model=model,
+        learning_rate=args.learning_rate,
+        device=device,
+        teacher_forcing_ratio=args.teacher_forcing_ratio
+    )
     
     print(f"\nStarting training for {args.epochs} epochs...")
     best_val_loss = float('inf')
@@ -102,16 +106,17 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Image Captioning Model")
-    
+
     parser.add_argument("--data_root", type=str, default="../data", help="Root directory of VizWiz dataset")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18", help="ResNet model for encoder")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.0, help="Teacher forcing ratio (0.0 = no teacher forcing)")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader workers")
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Checkpoint directory")
     parser.add_argument("--val_every", type=int, default=1, help="Validate every N epochs")
     parser.add_argument("--save_every", type=int, default=5, help="Save checkpoint every N epochs")
-    
+
     args = parser.parse_args()
     main(args)

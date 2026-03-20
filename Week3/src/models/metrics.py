@@ -9,8 +9,11 @@ class Metric:
         self.meteor = evaluate.load('meteor')
         
     def compute(self, predictions: List[str], references: List[str]) -> Dict[str, float]:
-        bleu1 = self.bleu.compute(predictions=predictions, references=references, max_order=1)
-        bleu2 = self.bleu.compute(predictions=predictions, references=references, max_order=2)
+        bleu_refs = [[ref] for ref in references]
+
+        bleu1 = self.bleu.compute(predictions=predictions, references=bleu_refs, max_order=1)
+        bleu2 = self.bleu.compute(predictions=predictions, references=bleu_refs, max_order=2)
+        
         rouge_scores = self.rouge.compute(predictions=predictions, references=references)
         meteor_score = self.meteor.compute(predictions=predictions, references=references)
         

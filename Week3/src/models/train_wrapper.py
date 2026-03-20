@@ -1,33 +1,34 @@
 import torch
 import torch.nn as nn
 from typing import Dict, Tuple, Optional
-from .model import Model, char2idx, idx2char, TEXT_MAX_LEN
+from .baseline import Baseline, char2idx, idx2char, TEXT_MAX_LEN
 from .metrics import Metric
 
 
 class CaptioningModule:
-    def __init__(self, model: Model, learning_rate: float = 1e-4, device: str = 'cpu'):
+    def __init__(self, model: Baseline, learning_rate: float = 1e-4, device: str = 'cpu', teacher_forcing_ratio: float = 0.0):
         self.model = model
         self.learning_rate = learning_rate
         self.device = device
+        self.teacher_forcing_ratio = teacher_forcing_ratio
         self.model.to(device)
-        
+
         self.criterion = nn.CrossEntropyLoss(ignore_index=char2idx['<PAD>'])
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         self.metric = Metric()
-        
+
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
         self.model.train()
         images, captions = batch
         images = images.to(self.device)
         captions = captions.to(self.device)
-        
+
         self.optimizer.zero_grad()
-        logits = self.model(images)
+        logits = self.model(images, target=captions, teacher_forcing_ratio=self.teacher_forcing_ratio)
         loss = self.criterion(logits, captions)
         loss.backward()
         self.optimizer.step()
-        
+
         return {'loss': loss.item()}
     
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:

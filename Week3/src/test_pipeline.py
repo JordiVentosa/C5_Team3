@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 
 print("Testing imports...")
-from models.model import Model, Encoder, Decoder
+from models.baseline import Baseline, EncoderResNet18, DecoderGRU
 from models.train_wrapper import CaptioningModule
 from models.metrics import Metric
 from datasets.vizwiz_dataset import VizWizDataset
@@ -12,11 +12,11 @@ print("✓ All imports successful")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"\nUsing device: {device}")
 
-model = Model(device=device)
+model = Baseline(device=device)
 print("✓ Model initialized")
 
-encoder = Encoder(device=device)
-decoder = Decoder(device=device)
+encoder = EncoderResNet18(device=device)
+decoder = DecoderGRU(device=device)
 print("✓ Encoder and Decoder initialized")
 
 print("\nTesting forward pass...")
