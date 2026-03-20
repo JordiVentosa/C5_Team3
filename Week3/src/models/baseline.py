@@ -73,11 +73,37 @@ class Baseline(nn.Module):
     def __init__(self, device='cuda', resnet_model: str = 'microsoft/resnet-18'):
         super().__init__()
         self.device = device
-        self.encoder = EncoderResNet18(resnet_model=resnet_model, device=device)
-        self.decoder = DecoderGRU(device=device)
+        self.resnet = ResNetModel.from_pretrained(resnet_model).to(device)
+        self.embed = nn.Embedding(NUM_CHAR, 512)
+        self.gru = nn.GRU(512, 512, num_layers=1)
+        self.proj = nn.Linear(512, NUM_CHAR)
 
     def forward(self, img, target=None, teacher_forcing_ratio=0.0):
         batch_size = img.shape[0]
-        visual_features = self.encoder(img)
-        logits = self.decoder(visual_features, batch_size, target, teacher_forcing_ratio)
-        return logits
+        feat = self.resnet(img)
+        feat = feat.pooler_output.squeeze(-1).squeeze(-1).unsqueeze(0)
+        start = torch.tensor(char2idx['<SOS>']).to(self.device)
+        start_embed = self.embed(start)
+        start_embeds = start_embed.repeat(batch_size, 1).unsqueeze(0)
+
+        current_inp = start_embeds
+        hidden = feat
+        outputs = []
+
+        for t in range(TEXT_MAX_LEN-1): # rm <SOS>
+            out, hidden = self.gru(current_inp, hidden)
+            outputs.append(out)
+
+            # Teacher forcing: use ground truth token with probability teacher_forcing_ratio
+            if target is not None and torch.rand(1).item() < teacher_forcing_ratio:
+                current_inp = self.embed(target[:, t]).unsqueeze(0)
+            else:
+                current_inp = out
+
+        # Concatenate the start token and all generated steps because thats what the teacher wants 
+        inp = torch.cat([start_embeds] + outputs, dim=0) # N+1, batch, 512
+
+        res = inp.permute(1, 0, 2) # batch, seq, 512
+        res = self.proj(res) # batch, seq, 80
+        res = res.permute(0, 2, 1) # batch, 80, seq
+        return res
