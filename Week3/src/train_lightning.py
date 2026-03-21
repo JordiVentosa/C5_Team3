@@ -11,15 +11,22 @@ from models.train_wrapper import *
 from custom_datasets.vizwiz_dataset import VizWizDataset
 import wandb
 
+# Global seed for reproducibility
+SEED = 42
+
 
 def main(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Set seed for reproducibility
+    torch.manual_seed(SEED)
 
     print("Loading datasets...")
     dataset = VizWizDataset(data_root=Path(args.data_root), split='train')
     train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size],
+                                               generator=torch.Generator().manual_seed(SEED))
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                               num_workers=args.num_workers, pin_memory=(device == 'cuda'), persistent_workers=True)
@@ -77,13 +84,13 @@ if __name__ == "__main__":
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"])
     parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--teacher_forcing_ratio", type=float, default=0)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--output_dir", type=str, default="./checkpoints")
     parser.add_argument("--val_every", type=int, default=1)
-    parser.add_argument("--save_every", type=int, default=5)
+    parser.add_argument("--save_every", type=int, default=3)
 
     args = parser.parse_args()
     main(args)
