@@ -10,7 +10,7 @@ char2idx = {v: k for k, v in enumerate(chars)}
 TEXT_MAX_LEN = 201
 
 
-class EncoderResNet18(nn.Module):
+class Encoder(nn.Module):
     def __init__(self, resnet_model: str = 'microsoft/resnet-18', device='cuda'):
         super().__init__()
         self.device = device
@@ -22,16 +22,24 @@ class EncoderResNet18(nn.Module):
         return feat
 
 
-class DecoderGRU(nn.Module):
-    def __init__(self, hidden_size=512, num_chars=NUM_CHAR, max_len=TEXT_MAX_LEN, device='cuda'):
+class Decoder(nn.Module):
+    def __init__(self, hidden_size=512, num_chars=NUM_CHAR, max_len=TEXT_MAX_LEN, device='cuda', rnn_type='GRU'):
         super().__init__()
         self.device = device
         self.hidden_size = hidden_size
         self.max_len = max_len
         self.num_chars = num_chars
+        self.rnn_type = rnn_type.upper()
 
         self.embed = nn.Embedding(num_chars, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size, num_layers=1)
+        
+        if self.rnn_type == 'GRU':
+            self.rnn = nn.GRU(hidden_size, hidden_size, num_layers=1)
+        elif self.rnn_type == 'LSTM':
+            self.rnn = nn.LSTM(hidden_size, hidden_size, num_layers=1)
+        else:
+            raise ValueError(f"Unknown rnn_type: {rnn_type}")
+        
         self.proj = nn.Linear(hidden_size, num_chars)
 
     def forward(self, visual_features, batch_size, target=None, teacher_forcing_ratio=0.0):
@@ -48,10 +56,17 @@ class DecoderGRU(nn.Module):
 
         current_inp = start_embeds
         hidden = visual_features
+        
+        if self.rnn_type == 'LSTM':
+            hidden = (hidden, torch.zeros_like(hidden))
+        
         outputs = []
 
         for t in range(self.max_len - 1):
-            out, hidden = self.gru(current_inp, hidden)
+            if self.rnn_type == 'GRU':
+                out, hidden = self.rnn(current_inp, hidden)
+            else:  # LSTM
+                out, hidden = self.rnn(current_inp, hidden)
             outputs.append(out)
 
             # Teacher forcing: use ground truth token with probability teacher_forcing_ratio
@@ -70,12 +85,20 @@ class DecoderGRU(nn.Module):
 
 
 class Baseline(nn.Module):
-    def __init__(self, device='cuda', resnet_model: str = 'microsoft/resnet-18'):
+    def __init__(self, device='cuda', resnet_model: str = 'microsoft/resnet-18', rnn_type: str = 'GRU'):
         super().__init__()
         self.device = device
         self.resnet = ResNetModel.from_pretrained(resnet_model).to(device)
+        self.rnn_type = rnn_type.upper()
         self.embed = nn.Embedding(NUM_CHAR, 512)
-        self.gru = nn.GRU(512, 512, num_layers=1)
+        
+        if self.rnn_type == 'GRU':
+            self.rnn = nn.GRU(512, 512, num_layers=1)
+        elif self.rnn_type == 'LSTM':
+            self.rnn = nn.LSTM(512, 512, num_layers=1)
+        else:
+            raise ValueError(f"Unknown rnn_type: {rnn_type}")
+        
         self.proj = nn.Linear(512, NUM_CHAR)
 
     def forward(self, img, target=None, teacher_forcing_ratio=0.0):
@@ -88,10 +111,17 @@ class Baseline(nn.Module):
 
         current_inp = start_embeds
         hidden = feat
+        
+        if self.rnn_type == 'LSTM':
+            hidden = (hidden, torch.zeros_like(hidden))
+        
         outputs = []
 
-        for t in range(TEXT_MAX_LEN-1): # rm <SOS>
-            out, hidden = self.gru(current_inp, hidden)
+        for t in range(TEXT_MAX_LEN-1):
+            if self.rnn_type == 'GRU':
+                out, hidden = self.rnn(current_inp, hidden)
+            else:  # LSTM
+                out, hidden = self.rnn(current_inp, hidden)
             outputs.append(out)
 
             # Teacher forcing: use ground truth token with probability teacher_forcing_ratio
@@ -101,9 +131,9 @@ class Baseline(nn.Module):
                 current_inp = out
 
         # Concatenate the start token and all generated steps because thats what the teacher wants 
-        inp = torch.cat([start_embeds] + outputs, dim=0) # N+1, batch, 512
+        inp = torch.cat([start_embeds] + outputs, dim=0)
 
-        res = inp.permute(1, 0, 2) # batch, seq, 512
-        res = self.proj(res) # batch, seq, 80
-        res = res.permute(0, 2, 1) # batch, 80, seq
+        res = inp.permute(1, 0, 2)
+        res = self.proj(res)
+        res = res.permute(0, 2, 1)
         return res
