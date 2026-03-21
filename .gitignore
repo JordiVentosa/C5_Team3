@@ -6,10 +6,10 @@ wandb/
 
 *.pth
 *.png
-*.txt
 *.json
 *.bin
 *.safetensors
 *.arrow
+*.sh
 
 logs/
