@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from pathlib import Path
 import argparse
 from tqdm import tqdm
@@ -21,6 +21,7 @@ VAL_EVERY = None
 SAVE_EVERY = None
 RNN_TYPE = None
 DEVICE = None
+SEED = 42
 
 
 def train_one_epoch(module, dataloader, epoch):
@@ -92,17 +93,28 @@ def main(args):
     print(f"TEACHER_FORCING_RATIO: {TEACHER_FORCING_RATIO}")
     print(f"NUM_WORKERS: {NUM_WORKERS}")
     print(f"OUTPUT_DIR: {OUTPUT_DIR}")
+    print(f"SEED: {SEED}")
     print(f"DEVICE: {DEVICE}\n")
-    
+
+    # Set seed for reproducibility
+    torch.manual_seed(SEED)
+
     print("Loading datasets...")
-    train_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='train')
-    val_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='test')
-    
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, 
+    # Load full training set and split it 90/10 for train/val
+    full_train_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='train')
+    train_size = int(0.9 * len(full_train_dataset))
+    val_size = len(full_train_dataset) - train_size
+    train_dataset, val_dataset = random_split(full_train_dataset, [train_size, val_size],
+                                               generator=torch.Generator().manual_seed(SEED))
+
+    # Test set is the original validation set
+    #test_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='val')
+
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
                               num_workers=NUM_WORKERS, pin_memory=(DEVICE == 'cuda'))
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False,
                             num_workers=NUM_WORKERS, pin_memory=(DEVICE == 'cuda'))
-    
+
     print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
     
     print("Creating model...")
