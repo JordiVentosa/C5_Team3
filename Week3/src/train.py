@@ -109,11 +109,11 @@ if __name__ == "__main__":
 
     parser.add_argument("--data_root", type=str, default="./data", help="Root directory of VizWiz dataset")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18", help="ResNet model for encoder")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.0, help="Teacher forcing ratio (0.0 = no teacher forcing)")
-    parser.add_argument("--num_workers", type=int, default=0, help="DataLoader workers")
+    parser.add_argument("--num_workers", type=int, default=8, help="DataLoader workers")
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Checkpoint directory")
     parser.add_argument("--val_every", type=int, default=1, help="Validate every N epochs")
     parser.add_argument("--save_every", type=int, default=5, help="Save checkpoint every N epochs")
