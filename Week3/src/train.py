@@ -81,8 +81,18 @@ def main(args):
     SAVE_EVERY = args.save_every
     RNN_TYPE = args.rnn_type
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    print(f"Using device: {DEVICE}")
+
+    print("Using configuration:")
+    print(f"DATA_ROOT: {DATA_ROOT}")
+    print(f"RESNET_MODEL: {RESNET_MODEL}")
+    print(f"RNN_TYPE: {RNN_TYPE}")
+    print(f"BATCH_SIZE: {BATCH_SIZE}")
+    print(f"EPOCHS: {EPOCHS}")
+    print(f"LEARNING_RATE: {LEARNING_RATE}")
+    print(f"TEACHER_FORCING_RATIO: {TEACHER_FORCING_RATIO}")
+    print(f"NUM_WORKERS: {NUM_WORKERS}")
+    print(f"OUTPUT_DIR: {OUTPUT_DIR}")
+    print(f"DEVICE: {DEVICE}\n")
     
     print("Loading datasets...")
     train_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='train')
@@ -143,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.0, help="Teacher forcing ratio (0.0 = no teacher forcing)")
+    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5, help="Teacher forcing ratio (0.0 = no teacher forcing)")
     parser.add_argument("--num_workers", type=int, default=8, help="DataLoader workers")
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Checkpoint directory")
     parser.add_argument("--val_every", type=int, default=1, help="Validate every N epochs")
