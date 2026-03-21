@@ -26,3 +26,7 @@ jupyterlab==4.5.4
 notebook==7.5.3
 ipykernel==7.2.0
 evaluate==0.4.6
+absl-py==2.4.0
+joblib==1.5.3
+nltk==3.9.3
+rouge_score==0.1.2

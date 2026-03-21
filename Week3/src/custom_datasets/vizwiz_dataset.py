@@ -1,4 +1,4 @@
-from vizwiz import VizWiz
+from .vizwiz import VizWiz
 from torch.utils.data import Dataset
 from pathlib import Path
 from PIL import Image

@@ -5,7 +5,7 @@ print("Testing imports...")
 from models.baseline import Baseline, EncoderResNet18, DecoderGRU
 from models.train_wrapper import CaptioningModule
 from models.metrics import Metric
-from datasets.vizwiz_dataset import VizWizDataset
+from custom_datasets.vizwiz_dataset import VizWizDataset
 
 print("✓ All imports successful")
 

@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from models.baseline import Baseline
 from models.train_wrapper import CaptioningModule
-from datasets.vizwiz_dataset import VizWizDataset
+from custom_datasets.vizwiz_dataset import VizWizDataset
 
 
 def train_one_epoch(module, dataloader, epoch):
@@ -107,7 +107,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Image Captioning Model")
 
-    parser.add_argument("--data_root", type=str, default="../data", help="Root directory of VizWiz dataset")
+    parser.add_argument("--data_root", type=str, default="./data", help="Root directory of VizWiz dataset")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18", help="ResNet model for encoder")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
