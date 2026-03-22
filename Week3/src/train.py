@@ -98,6 +98,9 @@ def main(args):
 
     # Set seed for reproducibility
     torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     print("Loading datasets...")
     # Load full training set and split it 90/10 for train/val
