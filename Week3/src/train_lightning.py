@@ -52,7 +52,7 @@ def main(args):
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=args.output_dir,
-        filename='best_model_test',
+        filename=f'best_{args.run_name}',
         monitor='val/loss',
         mode='min',
         save_top_k=1,
