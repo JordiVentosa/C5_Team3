@@ -147,14 +147,6 @@ python src/inference.py \
     --image_path path/to/image.jpg
 ```
 
-### SLURM Cluster
-
-For running on a SLURM cluster:
-
-```bash
-sbatch run-train.sh
-```
-
 ---
 
 ## Evaluation Metrics
