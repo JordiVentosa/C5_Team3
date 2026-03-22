@@ -7,6 +7,7 @@ from tqdm import tqdm
 from models.baseline import Baseline
 from models.train_wrapper import CaptioningModule
 from custom_datasets.vizwiz_dataset import VizWizDataset
+from tokenizers import get_tokenizer
 
 # Global variables for configuration
 DATA_ROOT = None
@@ -28,7 +29,7 @@ def train_one_epoch(module, dataloader, epoch):
     total_loss = 0.0
     num_batches = 0
     progress_bar = tqdm(dataloader, desc=f"Epoch {epoch}")
-    
+
     for batch in progress_bar:
         images, captions, _ = batch
         metrics = module.training_step((images, captions))
@@ -36,7 +37,7 @@ def train_one_epoch(module, dataloader, epoch):
         total_loss += loss
         num_batches += 1
         progress_bar.set_postfix({'loss': f'{loss:.4f}'})
-    
+
     return total_loss / num_batches
 
 
@@ -46,29 +47,29 @@ def validate(module, dataloader):
     all_predictions = []
     all_references = []
     progress_bar = tqdm(dataloader, desc="Validating")
-    
+
     for batch in progress_bar:
         images, captions, caption_texts = batch
         metrics = module.validation_step((images, captions))
         loss = metrics['loss']
         total_loss += loss
         num_batches += 1
-        
+
         predictions = module.predict(images)
         all_predictions.extend(predictions)
         all_references.extend(caption_texts)
         progress_bar.set_postfix({'loss': f'{loss:.4f}'})
-    
+
     avg_loss = total_loss / num_batches
     metrics = module.compute_metrics(all_predictions, all_references)
-    
+
     return avg_loss, metrics
 
 
 def main(args):
     global DATA_ROOT, RESNET_MODEL, BATCH_SIZE, EPOCHS, LEARNING_RATE, TEACHER_FORCING_RATIO
     global NUM_WORKERS, OUTPUT_DIR, VAL_EVERY, SAVE_EVERY, RNN_TYPE, DEVICE
-    
+
     # Set global variables from args
     DATA_ROOT = args.data_root
     RESNET_MODEL = args.resnet_model
@@ -87,6 +88,7 @@ def main(args):
     print(f"DATA_ROOT: {DATA_ROOT}")
     print(f"RESNET_MODEL: {RESNET_MODEL}")
     print(f"RNN_TYPE: {RNN_TYPE}")
+    print(f"TOKENIZER_TYPE: {args.tokenizer_type}")
     print(f"BATCH_SIZE: {BATCH_SIZE}")
     print(f"EPOCHS: {EPOCHS}")
     print(f"LEARNING_RATE: {LEARNING_RATE}")
@@ -102,16 +104,28 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    print("Loading datasets...")
+    # Initialize tokenizer
+    print(f"Initializing {args.tokenizer_type} tokenizer...")
+    tokenizer = get_tokenizer(tokenizer_type=args.tokenizer_type)
+
+    # Load training dataset to build vocabulary
+    print("Loading training dataset to build vocabulary...")
+    full_dataset_temp = VizWizDataset(data_root=Path(DATA_ROOT), split='train', tokenizer=None)
+    train_captions = full_dataset_temp.get_all_captions()
+    tokenizer.build_vocab(train_captions)
+    print(f"Vocabulary size: {tokenizer.vocab_size}")
+    print(f"Max sequence length: {tokenizer.max_len}")
+
+    print("\nLoading datasets...")
     # Load full training set and split it 90/10 for train/val
-    full_train_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='train')
+    full_train_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='train', tokenizer=tokenizer)
     train_size = int(0.9 * len(full_train_dataset))
     val_size = len(full_train_dataset) - train_size
     train_dataset, val_dataset = random_split(full_train_dataset, [train_size, val_size],
                                                generator=torch.Generator().manual_seed(SEED))
 
     # Test set is the original validation set
-    #test_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='val')
+    #test_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='val', tokenizer=tokenizer)
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
                               num_workers=NUM_WORKERS, pin_memory=(DEVICE == 'cuda'))
@@ -119,43 +133,44 @@ def main(args):
                             num_workers=NUM_WORKERS, pin_memory=(DEVICE == 'cuda'))
 
     print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
-    
+
     print("Creating model...")
-    model = Baseline(device=DEVICE, resnet_model=RESNET_MODEL, rnn_type=RNN_TYPE)
+    model = Baseline(tokenizer=tokenizer, device=DEVICE, resnet_model=RESNET_MODEL, rnn_type=RNN_TYPE)
     module = CaptioningModule(
         model=model,
+        tokenizer=tokenizer,
         learning_rate=LEARNING_RATE,
         device=DEVICE,
         teacher_forcing_ratio=TEACHER_FORCING_RATIO
     )
-    
+
     print(f"\nStarting training for {EPOCHS} epochs...")
     best_val_loss = float('inf')
-    
+
     for epoch in range(1, EPOCHS + 1):
         print(f"\n{'='*60}\nEpoch {epoch}/{EPOCHS}\n{'='*60}")
-        
+
         train_loss = train_one_epoch(module, train_loader, epoch)
         print(f"\nTrain Loss: {train_loss:.4f}")
-        
+
         if epoch % VAL_EVERY == 0:
             val_loss, val_metrics = validate(module, val_loader)
             print(f"Val Loss: {val_loss:.4f}")
             print(f"Val Metrics: {module.metric.format_metrics(val_metrics)}")
-            
+
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 checkpoint_path = Path(OUTPUT_DIR) / "best_model.pth"
                 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
                 module.save_checkpoint(str(checkpoint_path))
                 print(f"✓ Saved best model to {checkpoint_path}")
-        
+
         if epoch % SAVE_EVERY == 0:
             checkpoint_path = Path(OUTPUT_DIR) / f"checkpoint_epoch_{epoch}.pth"
             checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             module.save_checkpoint(str(checkpoint_path))
             print(f"✓ Saved checkpoint to {checkpoint_path}")
-    
+
     print(f"\n{'='*60}\nTraining completed!\nBest validation loss: {best_val_loss:.4f}\n{'='*60}")
 
 
@@ -163,6 +178,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Image Captioning Model")
 
     parser.add_argument("--data_root", type=str, default="./data", help="Root directory of VizWiz dataset")
+    parser.add_argument("--tokenizer_type", type=str, default="character",
+                        choices=["character", "word", "subword"],
+                        help="Tokenizer type: character, word, or subword (BERT)")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18", help="ResNet model for encoder (e.g., microsoft/resnet-18 or microsoft/resnet-50)")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"], help="RNN type for decoder")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size")

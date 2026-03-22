@@ -9,6 +9,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from models.baseline import Baseline
 from models.train_wrapper import *
 from custom_datasets.vizwiz_dataset import VizWizDataset
+from tokenizers import get_tokenizer
 import wandb
 
 # Global seed for reproducibility
@@ -22,8 +23,24 @@ def main(args):
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
 
-    print("Loading datasets...")
-    dataset = VizWizDataset(data_root=Path(args.data_root), split='train')
+    # Initialize tokenizer
+    print(f"Initializing {args.tokenizer_type} tokenizer...")
+    tokenizer = get_tokenizer(tokenizer_type=args.tokenizer_type)
+
+    # Load training dataset to build vocabulary
+    print("Loading training dataset...")
+    full_dataset = VizWizDataset(data_root=Path(args.data_root), split='train', tokenizer=None)
+
+    # Build vocabulary from training captions
+    print("Building vocabulary from training data...")
+    train_captions = full_dataset.get_all_captions()
+    tokenizer.build_vocab(train_captions)
+    print(f"Vocabulary size: {tokenizer.vocab_size}")
+    print(f"Max sequence length: {tokenizer.max_len}")
+
+    # Now create datasets with the tokenizer
+    print("Creating datasets with tokenizer...")
+    dataset = VizWizDataset(data_root=Path(args.data_root), split='train', tokenizer=tokenizer)
     train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size],
@@ -37,9 +54,10 @@ def main(args):
     print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
 
     print("Creating model...")
-    model = Baseline(device=device, resnet_model=args.resnet_model, rnn_type=args.rnn_type)
+    model = Baseline(tokenizer=tokenizer, device=device, resnet_model=args.resnet_model, rnn_type=args.rnn_type)
     module = TrainWrapper(
         model=model,
+        tokenizer=tokenizer,
         learning_rate=args.learning_rate,
         teacher_forcing_ratio=args.teacher_forcing_ratio,
         batch_size=args.batch_size
@@ -62,7 +80,7 @@ def main(args):
     run = wandb.init(
         entity="C5-Team3",
         project="Captioning-Week3",
-        name=args.run_name, 
+        name=args.run_name,
         config=vars(args)
     )
 
@@ -84,6 +102,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Image Captioning Model")
 
     parser.add_argument("--data_root", type=str, default="./data")
+    parser.add_argument("--tokenizer_type", type=str, default="character",
+                        choices=["character", "word", "subword"],
+                        help="Tokenizer type: character, word, or subword (BERT)")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"])
     parser.add_argument("--batch_size", type=int, default=128)

@@ -7,6 +7,7 @@ from tqdm import tqdm
 from models.baseline import Baseline
 from models.train_wrapper import CaptioningModule
 from custom_datasets.vizwiz_dataset import VizWizDataset
+from tokenizers import get_tokenizer
 
 # Global variables for configuration
 DATA_ROOT = None
@@ -52,23 +53,37 @@ def main(args):
     print(f"DATA_ROOT: {DATA_ROOT}")
     print(f"RESNET_MODEL: {RESNET_MODEL}")
     print(f"RNN_TYPE: {RNN_TYPE}")
+    print(f"TOKENIZER_TYPE: {args.tokenizer_type}")
     print(f"BATCH_SIZE: {BATCH_SIZE}")
     print(f"NUM_WORKERS: {NUM_WORKERS}")
     print(f"DEVICE: {DEVICE}")
     print(f"CHECKPOINT: {args.checkpoint}\n")
 
-    print("Loading test dataset...")
+    # Initialize tokenizer
+    print(f"Initializing {args.tokenizer_type} tokenizer...")
+    tokenizer = get_tokenizer(tokenizer_type=args.tokenizer_type)
+
+    # Load training dataset to build vocabulary (same as during training)
+    print("Loading training dataset to build vocabulary...")
+    train_dataset_temp = VizWizDataset(data_root=Path(DATA_ROOT), split='train', tokenizer=None)
+    train_captions = train_dataset_temp.get_all_captions()
+    tokenizer.build_vocab(train_captions)
+    print(f"Vocabulary size: {tokenizer.vocab_size}")
+    print(f"Max sequence length: {tokenizer.max_len}")
+
+    print("\nLoading test dataset...")
     # Test set is the original validation set
-    test_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='val')
+    test_dataset = VizWizDataset(data_root=Path(DATA_ROOT), split='val', tokenizer=tokenizer)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False,
                             num_workers=NUM_WORKERS, pin_memory=(DEVICE == 'cuda'))
 
     print(f"Test: {len(test_dataset)} samples")
 
     print("\nCreating model...")
-    model = Baseline(device=DEVICE, resnet_model=RESNET_MODEL, rnn_type=RNN_TYPE)
+    model = Baseline(tokenizer=tokenizer, device=DEVICE, resnet_model=RESNET_MODEL, rnn_type=RNN_TYPE)
     module = CaptioningModule(
         model=model,
+        tokenizer=tokenizer,
         device=DEVICE
     )
 
@@ -109,6 +124,9 @@ if __name__ == "__main__":
 
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to model checkpoint")
     parser.add_argument("--data_root", type=str, default="./data", help="Root directory of VizWiz dataset")
+    parser.add_argument("--tokenizer_type", type=str, default="character",
+                        choices=["character", "word", "subword"],
+                        help="Tokenizer type: character, word, or subword (BERT)")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18", help="ResNet model for encoder")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"], help="RNN type for decoder")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for inference")
@@ -118,3 +136,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
+
