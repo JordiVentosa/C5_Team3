@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH -p mhigh
+#SBATCH -p mlow
 #SBATCH --mem 24G
 #SBATCH --gres gpu:1
 #SBATCH -o logs/%x_%u_%j.out # File to which STDOUT will be written
 #SBATCH -e logs/%x_%u_%j.err # File to which STDERR will be written
 
 # Run your program
-wandb agent C5-Team3/Captioning-Week3/86knd39o
+wandb agent C5-Team3/Captioning-Week3/9z6fkf7f

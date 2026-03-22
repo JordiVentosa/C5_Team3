@@ -2,7 +2,7 @@ program: src/train_sweep.py
 
 method: bayes
 metric:
-  name: val/loss
+  name: val/loss_epoch
   goal: minimize
 
 early_terminate:
