@@ -94,10 +94,12 @@ class TrainWrapper(L.LightningModule):
         model: Baseline,
         learning_rate: float = 1e-4,
         teacher_forcing_ratio: float = 0.0,
+        batch_size : int = 128,
     ):
         super().__init__()
         self.model = model
         self.learning_rate = learning_rate
+        self.batch_size = batch_size
         self.teacher_forcing_ratio = teacher_forcing_ratio
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=char2idx['<PAD>'])
@@ -113,7 +115,7 @@ class TrainWrapper(L.LightningModule):
         images, captions, caption_text = batch
         logits = self.model(images, target=captions, teacher_forcing_ratio=self.teacher_forcing_ratio)
         loss = self.criterion(logits, captions)
-        self.log('train/loss', loss, prog_bar=True, on_epoch=True, on_step=True)
+        self.log('train/loss', loss, prog_bar=True, on_epoch=True, on_step=True, batch_size=self.batch_size)
 
         predictions = [self._decode_caption(pred) for pred in torch.argmax(logits, dim=1)]
         self._train_predictions.extend(predictions)
@@ -128,7 +130,7 @@ class TrainWrapper(L.LightningModule):
     def on_train_epoch_end(self):
         metrics = self.compute_metrics(self._train_predictions, self._train_references)
         for name, value in metrics.items():
-            self.log(f'train/{name}', value, prog_bar=True)
+            self.log(f'train/{name}', value, prog_bar=True, on_epoch=True)
         self._train_predictions.clear()
         self._train_references.clear()
 
@@ -136,7 +138,7 @@ class TrainWrapper(L.LightningModule):
         images, captions, caption_text = batch
         logits = self.model(images)
         loss = self.criterion(logits, captions)
-        self.log('val/loss', loss, prog_bar=True, on_epoch=True, on_step=True)
+        self.log('val/loss', loss, prog_bar=True, on_epoch=True, on_step=True, batch_size=self.batch_size)
 
         predictions = [self._decode_caption(pred) for pred in torch.argmax(logits, dim=1)]
         self._val_predictions.extend(predictions)
@@ -151,7 +153,7 @@ class TrainWrapper(L.LightningModule):
     def on_validation_epoch_end(self):
         metrics = self.compute_metrics(self._val_predictions, self._val_references)
         for name, value in metrics.items():
-            self.log(f'val/{name}', value, prog_bar=True)
+            self.log(f'val/{name}', value, prog_bar=True, on_epoch=True)
         self._val_predictions.clear()
         self._val_references.clear()
 

@@ -41,6 +41,7 @@ def main(args):
         model=model,
         learning_rate=args.learning_rate,
         teacher_forcing_ratio=args.teacher_forcing_ratio,
+        batch_size=args.batch_size
     )
 
     early_stopping = EarlyStopping(
@@ -69,6 +70,7 @@ def main(args):
         check_val_every_n_epoch=args.val_every,
         callbacks=[checkpoint_callback, early_stopping],
         logger=WandbLogger(experiment=run),
+        log_every_n_steps=1
     )
 
     trainer.fit(module, train_loader, val_loader)
