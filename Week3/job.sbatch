@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH -p mlow
+#SBATCH -p mhigh
 #SBATCH --mem 24G
 #SBATCH --gres gpu:1
 #SBATCH -o logs/%x_%u_%j.out # File to which STDOUT will be written
 #SBATCH -e logs/%x_%u_%j.err # File to which STDERR will be written
 
 # Run your program
-python src/train_lightning.py
+wandb agent C5-Team3/Captioning-Week3/86knd39o

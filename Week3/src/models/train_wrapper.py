@@ -107,7 +107,8 @@ class TrainWrapper(L.LightningModule):
         learning_rate: float = 1e-4,
         teacher_forcing_ratio: float = 0.0,
         batch_size: int = 128,
-        optimizer_type: str = "Adam"
+        optimizer_type: str = "Adam",
+        scheduler_type : str = "None"
     ):
         super().__init__()
         self.model = model
@@ -116,11 +117,10 @@ class TrainWrapper(L.LightningModule):
         self.batch_size = batch_size
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.optimizer_type = optimizer_type
+        self.scheduler_type = scheduler_type
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.get_special_token_indices()['pad'])
         self.metric = Metric()
-
-        self.save_hyperparameters(ignore=['model', 'tokenizer', 'criterion', 'metric'])
 
     # ------------------------------------------------------------------ #
     #  Core steps                                                        #
@@ -183,14 +183,23 @@ class TrainWrapper(L.LightningModule):
     # ------------------------------------------------------------------ #
 
     def configure_optimizers(self):
-        if self.optimizer_type == "Adam":
-            return torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        elif self.optimizer_type == "SGD":
-            return torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
-        elif self.optimizer_type == "AdamW":
-            return torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-        else:
-            raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
+        if self.optimizer_type == "adam":
+            optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        elif self.optimizer_type == "adamw":
+            optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+        elif self.optimizer_type == "sgd":
+            optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, momentum=0.9)
+
+        if self.scheduler_type == "none":
+            return optimizer
+
+        elif self.scheduler_type == "linear":
+            scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.1, total_iters=50)
+
+        elif self.scheduler_type == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
+
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
     # ------------------------------------------------------------------ #
     #  Helpers                                                             #

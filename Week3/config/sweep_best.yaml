@@ -1,0 +1,28 @@
+program: src/train_sweep.py
+
+method: bayes
+metric:
+  name: val/loss
+  goal: minimize
+
+early_terminate:
+  type: hyperband
+  min_iter: 5        # minimum epochs before a run can be killed
+  eta: 3             # aggressiveness — lower keeps fewer runs alive
+
+parameters:
+  learning_rate:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 1e-2
+
+  teacher_forcing_ratio:
+    distribution: uniform
+    min: 0.0
+    max: 1.0
+
+  optimizer:
+    values: [adam, adamw, sgd]
+
+  scheduler:
+    values: [none, linear, cosine]
