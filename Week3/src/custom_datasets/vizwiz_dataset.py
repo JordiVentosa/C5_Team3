@@ -6,7 +6,7 @@ import random
 import torch
 import torchvision.transforms as transforms
 from typing import Optional
-from tokenizers import BaseTokenizer
+from text_tokenizers import BaseTokenizer
 
 
 class VizWizDataset(Dataset):

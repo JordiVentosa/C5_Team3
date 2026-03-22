@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Optional
 from .baseline import Baseline
 from .metrics import Metric
 import lightning as L
-from tokenizers import BaseTokenizer
+from text_tokenizers import BaseTokenizer
 
 
 class CaptioningModule:

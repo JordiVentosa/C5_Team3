@@ -1,7 +1,7 @@
 import torch.nn as nn
 from transformers import ResNetModel
 import torch
-from tokenizers import BaseTokenizer
+from text_tokenizers import BaseTokenizer
 
 
 class Baseline(nn.Module):

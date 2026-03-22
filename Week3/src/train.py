@@ -7,7 +7,7 @@ from tqdm import tqdm
 from models.baseline import Baseline
 from models.train_wrapper import CaptioningModule
 from custom_datasets.vizwiz_dataset import VizWizDataset
-from tokenizers import get_tokenizer
+from text_tokenizers import get_tokenizer
 
 # Global variables for configuration
 DATA_ROOT = None

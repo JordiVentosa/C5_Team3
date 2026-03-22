@@ -9,7 +9,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from models.baseline import Baseline
 from models.train_wrapper import *
 from custom_datasets.vizwiz_dataset import VizWizDataset
-from tokenizers import get_tokenizer
+from text_tokenizers import get_tokenizer
 import wandb
 
 # Global seed for reproducibility
