@@ -89,6 +89,7 @@ def train():
         callbacks=[early_stopping],
         logger=WandbLogger(experiment=run),
         log_every_n_steps=1,
+        enable_checkpointing=False,
     )
 
     trainer.fit(module, train_loader, val_loader)
