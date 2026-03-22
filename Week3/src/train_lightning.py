@@ -61,7 +61,7 @@ def main(args):
     run = wandb.init(
         entity="C5-Team3",
         project="Captioning-Week3",
-        name="Test", 
+        name=args.run_name, 
         config=vars(args)
     )
 
@@ -93,6 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="./checkpoints")
     parser.add_argument("--val_every", type=int, default=1)
     parser.add_argument("--save_every", type=int, default=3)
+    parser.add_argument("--run_name", type=str, default="Baseline", help="Name of the W&B run")
 
     args = parser.parse_args()
     main(args)
