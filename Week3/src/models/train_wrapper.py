@@ -206,21 +206,25 @@ class TrainWrapper(L.LightningModule):
     # ------------------------------------------------------------------ #
 
     def configure_optimizers(self):
-        if self.optimizer_type == "adam":
+        optimizer_type_lower = self.optimizer_type.lower()
+        if optimizer_type_lower == "adam":
             optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        elif self.optimizer_type == "adamw":
+        elif optimizer_type_lower == "adamw":
             optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        elif self.optimizer_type == "sgd":
+        elif optimizer_type_lower == "sgd":
             optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, momentum=0.9)
+        else:
+            raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
 
-        if self.scheduler_type == "none":
+        scheduler_type_lower = self.scheduler_type.lower()
+        if scheduler_type_lower == "none":
             return optimizer
-
-        elif self.scheduler_type == "linear":
+        elif scheduler_type_lower == "linear":
             scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.1, total_iters=50)
-
-        elif self.scheduler_type == "cosine":
+        elif scheduler_type_lower == "cosine":
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
+        else:
+            raise ValueError(f"Unknown scheduler type: {self.scheduler_type}")
 
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
 

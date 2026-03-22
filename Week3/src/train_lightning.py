@@ -57,9 +57,16 @@ def main(args):
     model = Baseline(
         tokenizer=tokenizer,
         device=device,
+<<<<<<< HEAD
         resnet_model="microsoft/resnet-34",
         rnn_type="GRU",
         freeze_encoder=False
+=======
+        resnet_model=args.resnet_model,
+        rnn_type=args.rnn_type,
+        freeze_encoder=(args.freeze_encoder == "yes"),
+        attention=(args.attention == "yes")
+>>>>>>> 798327632794d325cc9c5132e178c048bcf9136b
     )
     module = TrainWrapper(
         model=model,
@@ -116,6 +123,7 @@ if __name__ == "__main__":
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-34")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"])
     parser.add_argument("--freeze_encoder", type=str, required=True, choices=["yes", "no"], help="Freeze encoder (ResNet) weights during training")
+    parser.add_argument("--attention", type=str, required=True, choices=["yes", "no"], help="Use Bahdanau attention mechanism")
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
