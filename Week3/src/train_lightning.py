@@ -66,7 +66,8 @@ def main(args):
         tokenizer=tokenizer,
         learning_rate=args.learning_rate,
         teacher_forcing_ratio=args.teacher_forcing_ratio,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        optimizer_type=args.optimizer
     )
 
     early_stopping = EarlyStopping(
@@ -123,6 +124,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_every", type=int, default=1)
     parser.add_argument("--save_every", type=int, default=3)
     parser.add_argument("--run_name", type=str, default="Baseline", help="Name of the W&B run")
+    parser.add_argument("--optimizer", type=str, default="Adam", choices=["Adam", "SGD", "AdamW"], help="Optimizer type")
 
     args = parser.parse_args()
     main(args)

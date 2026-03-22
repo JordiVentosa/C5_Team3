@@ -22,6 +22,9 @@ class Baseline(nn.Module):
 
         self.resnet = ResNetModel.from_pretrained(resnet_model).to(device)
 
+        # Get ResNet output dimension from config
+        self.hidden_dim = self.resnet.config.hidden_sizes[-1]
+
         # Freeze encoder if requested
         if freeze_encoder:
             for param in self.resnet.parameters():
@@ -29,21 +32,22 @@ class Baseline(nn.Module):
             print("✓ Encoder (ResNet) frozen - parameters will not be updated during training")
 
         self.rnn_type = rnn_type.upper()
-        self.embed = nn.Embedding(self.vocab_size, 512)
+        self.embed = nn.Embedding(self.vocab_size, self.hidden_dim)
 
         if self.rnn_type == 'GRU':
-            self.rnn = nn.GRU(512, 512, num_layers=1)
+            self.rnn = nn.GRU(self.hidden_dim, self.hidden_dim, num_layers=1)
         elif self.rnn_type == 'LSTM':
-            self.rnn = nn.LSTM(512, 512, num_layers=1)
+            self.rnn = nn.LSTM(self.hidden_dim, self.hidden_dim, num_layers=1)
         else:
             raise ValueError(f"Unknown rnn_type: {rnn_type}")
 
-        self.proj = nn.Linear(512, self.vocab_size)
+        self.proj = nn.Linear(self.hidden_dim, self.vocab_size)
 
     def forward(self, img, target=None, teacher_forcing_ratio=0.0):
         batch_size = img.shape[0]
         feat = self.resnet(img)
         feat = feat.pooler_output.squeeze(-1).squeeze(-1).unsqueeze(0)
+
         start = torch.tensor(self.special_tokens['sos']).to(self.device)
         start_embed = self.embed(start)
         start_embeds = start_embed.repeat(batch_size, 1).unsqueeze(0)

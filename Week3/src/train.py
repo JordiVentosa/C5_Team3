@@ -89,6 +89,7 @@ def main(args):
     print(f"RESNET_MODEL: {RESNET_MODEL}")
     print(f"RNN_TYPE: {RNN_TYPE}")
     print(f"TOKENIZER_TYPE: {args.tokenizer_type}")
+    print(f"OPTIMIZER: {args.optimizer}")
     print(f"BATCH_SIZE: {BATCH_SIZE}")
     print(f"EPOCHS: {EPOCHS}")
     print(f"LEARNING_RATE: {LEARNING_RATE}")
@@ -147,7 +148,8 @@ def main(args):
         tokenizer=tokenizer,
         learning_rate=LEARNING_RATE,
         device=DEVICE,
-        teacher_forcing_ratio=TEACHER_FORCING_RATIO
+        teacher_forcing_ratio=TEACHER_FORCING_RATIO,
+        optimizer_type=args.optimizer
     )
 
     print(f"\nStarting training for {EPOCHS} epochs...")
@@ -199,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_every", type=int, default=1, help="Validate every N epochs")
     parser.add_argument("--save_every", type=int, default=3, help="Save checkpoint every N epochs")
     parser.add_argument("--run_name", type=str, default="Baseline", help="Useless: Compatibility issues")
+    parser.add_argument("--optimizer", type=str, default="Adam", choices=["Adam", "SGD", "AdamW"], help="Optimizer type")
 
 
     args = parser.parse_args()

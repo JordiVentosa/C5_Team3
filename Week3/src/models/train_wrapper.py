@@ -14,18 +14,30 @@ class CaptioningModule:
         tokenizer: BaseTokenizer,
         learning_rate: float = 1e-4,
         device: str = 'cpu',
-        teacher_forcing_ratio: float = 0.0
+        teacher_forcing_ratio: float = 0.0,
+        optimizer_type: str = "Adam"
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.learning_rate = learning_rate
         self.device = device
         self.teacher_forcing_ratio = teacher_forcing_ratio
+        self.optimizer_type = optimizer_type
         self.model.to(device)
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.get_special_token_indices()['pad'])
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.optimizer = self._get_optimizer()
         self.metric = Metric()
+
+    def _get_optimizer(self):
+        if self.optimizer_type == "Adam":
+            return torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        elif self.optimizer_type == "SGD":
+            return torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        elif self.optimizer_type == "AdamW":
+            return torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
+        else:
+            raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
 
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, float]:
         self.model.train()
@@ -95,6 +107,7 @@ class TrainWrapper(L.LightningModule):
         learning_rate: float = 1e-4,
         teacher_forcing_ratio: float = 0.0,
         batch_size: int = 128,
+        optimizer_type: str = "Adam"
     ):
         super().__init__()
         self.model = model
@@ -102,6 +115,7 @@ class TrainWrapper(L.LightningModule):
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.teacher_forcing_ratio = teacher_forcing_ratio
+        self.optimizer_type = optimizer_type
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.get_special_token_indices()['pad'])
         self.metric = Metric()
@@ -169,7 +183,14 @@ class TrainWrapper(L.LightningModule):
     # ------------------------------------------------------------------ #
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        if self.optimizer_type == "Adam":
+            return torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        elif self.optimizer_type == "SGD":
+            return torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        elif self.optimizer_type == "AdamW":
+            return torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
+        else:
+            raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
 
     # ------------------------------------------------------------------ #
     #  Helpers                                                             #

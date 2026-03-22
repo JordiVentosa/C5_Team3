@@ -42,10 +42,20 @@ class SubWordTokenizer(BaseTokenizer):
         """Map tokens to indices using BERT's vocab"""
         return self.bert_tokenizer.get_vocab()
 
+    @token2idx.setter
+    def token2idx(self, value):
+        """Setter to allow initialization from base class"""
+        pass
+
     @property
     def idx2token(self):
         """Map indices to tokens using BERT's vocab"""
         return {idx: token for token, idx in self.bert_tokenizer.get_vocab().items()}
+
+    @idx2token.setter
+    def idx2token(self, value):
+        """Setter to allow initialization from base class"""
+        pass
 
     def encode(self, text: str) -> torch.Tensor:
         """Encode text using BERT tokenizer with padding"""
