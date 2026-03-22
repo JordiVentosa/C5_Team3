@@ -170,6 +170,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Checkpoint directory")
     parser.add_argument("--val_every", type=int, default=1, help="Validate every N epochs")
     parser.add_argument("--save_every", type=int, default=3, help="Save checkpoint every N epochs")
+    parser.add_argument("--run_name", type=str, default="Baseline", help="Useless: Compatibility issues")
+
 
     args = parser.parse_args()
     main(args)
