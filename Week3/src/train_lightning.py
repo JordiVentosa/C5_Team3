@@ -57,22 +57,16 @@ def main(args):
     model = Baseline(
         tokenizer=tokenizer,
         device=device,
-<<<<<<< HEAD
-        resnet_model="microsoft/resnet-34",
-        rnn_type="GRU",
-        freeze_encoder=False
-=======
         resnet_model=args.resnet_model,
         rnn_type=args.rnn_type,
         freeze_encoder=(args.freeze_encoder == "yes"),
         attention=(args.attention == "yes")
->>>>>>> 798327632794d325cc9c5132e178c048bcf9136b
     )
     module = TrainWrapper(
         model=model,
         tokenizer=tokenizer,
-        learning_rate=3e-4,
-        teacher_forcing_ratio=0.253,
+        learning_rate=0.0003070136460705484,
+        teacher_forcing_ratio=0.25336340759892617,
         batch_size=args.batch_size,
         optimizer_type='adamw',
         scheduler_type="cosine"
@@ -95,7 +89,7 @@ def main(args):
     run = wandb.init(
         entity="C5-Team3",
         project="Captioning-Week3",
-        name="Hyperparameter",
+        name="Hyperparameter3",
         config=vars(args)
     )
 
