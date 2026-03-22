@@ -85,7 +85,8 @@ def main(args):
         device=DEVICE,
         resnet_model=RESNET_MODEL,
         rnn_type=RNN_TYPE,
-        freeze_encoder=False  # Not needed for inference, but keeping signature consistent
+        freeze_encoder=False,  # Not needed for inference, but keeping signature consistent
+        attention=(args.attention == "yes")
     )
     module = CaptioningModule(
         model=model,
@@ -135,6 +136,7 @@ if __name__ == "__main__":
                         help="Tokenizer type: character, word, or subword (BERT)")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18", help="ResNet model for encoder")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"], help="RNN type for decoder")
+    parser.add_argument("--attention", type=str, required=True, choices=["yes", "no"], help="Use Bahdanau attention mechanism")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size for inference")
     parser.add_argument("--num_workers", type=int, default=8, help="DataLoader workers")
     parser.add_argument("--save_predictions", action="store_true", help="Save predictions to file")
