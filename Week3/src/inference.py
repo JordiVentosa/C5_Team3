@@ -80,7 +80,13 @@ def main(args):
     print(f"Test: {len(test_dataset)} samples")
 
     print("\nCreating model...")
-    model = Baseline(tokenizer=tokenizer, device=DEVICE, resnet_model=RESNET_MODEL, rnn_type=RNN_TYPE)
+    model = Baseline(
+        tokenizer=tokenizer,
+        device=DEVICE,
+        resnet_model=RESNET_MODEL,
+        rnn_type=RNN_TYPE,
+        freeze_encoder=False  # Not needed for inference, but keeping signature consistent
+    )
     module = CaptioningModule(
         model=model,
         tokenizer=tokenizer,

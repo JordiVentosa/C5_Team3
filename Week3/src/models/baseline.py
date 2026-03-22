@@ -10,7 +10,8 @@ class Baseline(nn.Module):
         tokenizer: BaseTokenizer,
         device='cuda',
         resnet_model: str = 'microsoft/resnet-18',
-        rnn_type: str = 'GRU'
+        rnn_type: str = 'GRU',
+        freeze_encoder: bool = False
     ):
         super().__init__()
         self.device = device
@@ -20,6 +21,13 @@ class Baseline(nn.Module):
         self.special_tokens = tokenizer.get_special_token_indices()
 
         self.resnet = ResNetModel.from_pretrained(resnet_model).to(device)
+
+        # Freeze encoder if requested
+        if freeze_encoder:
+            for param in self.resnet.parameters():
+                param.requires_grad = False
+            print("✓ Encoder (ResNet) frozen - parameters will not be updated during training")
+
         self.rnn_type = rnn_type.upper()
         self.embed = nn.Embedding(self.vocab_size, 512)
 

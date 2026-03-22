@@ -54,7 +54,13 @@ def main(args):
     print(f"Train: {len(train_dataset)} | Val: {len(val_dataset)}")
 
     print("Creating model...")
-    model = Baseline(tokenizer=tokenizer, device=device, resnet_model=args.resnet_model, rnn_type=args.rnn_type)
+    model = Baseline(
+        tokenizer=tokenizer,
+        device=device,
+        resnet_model=args.resnet_model,
+        rnn_type=args.rnn_type,
+        freeze_encoder=(args.freeze_encoder == "yes")
+    )
     module = TrainWrapper(
         model=model,
         tokenizer=tokenizer,
@@ -107,6 +113,7 @@ if __name__ == "__main__":
                         help="Tokenizer type: character, word, or subword (BERT)")
     parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"])
+    parser.add_argument("--freeze_encoder", type=str, required=True, choices=["yes", "no"], help="Freeze encoder (ResNet) weights during training")
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
