@@ -178,6 +178,29 @@ class TrainWrapper(L.LightningModule):
         predictions = torch.argmax(logits, dim=1)
         return [self.tokenizer.decode(pred) for pred in predictions]
 
+    def on_test_epoch_start(self):
+        self._test_predictions = []
+        self._test_references = []
+
+    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        images, captions, caption_text = batch
+        logits = self.model(images)
+        loss = self.criterion(logits, captions)
+        self.log('test/loss', loss, prog_bar=True, on_epoch=True, on_step=True, batch_size=self.batch_size)
+
+        predictions = [self.tokenizer.decode(pred) for pred in torch.argmax(logits, dim=1)]
+        self._test_predictions.extend(predictions)
+        self._test_references.extend(caption_text)
+
+        return loss
+
+    def on_test_epoch_end(self):
+        metrics = self.compute_metrics(self._test_predictions, self._test_references)
+        for name, value in metrics.items():
+            self.log(f'test/{name}', value, prog_bar=True, on_epoch=True)
+        self._test_predictions.clear()
+        self._test_references.clear()
+
     # ------------------------------------------------------------------ #
     #  Optimizer                                                           #
     # ------------------------------------------------------------------ #

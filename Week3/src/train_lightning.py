@@ -25,7 +25,7 @@ def main(args):
 
     # Initialize tokenizer
     print(f"Initializing {args.tokenizer_type} tokenizer...")
-    tokenizer = get_tokenizer(tokenizer_type=args.tokenizer_type)
+    tokenizer = get_tokenizer(tokenizer_type='word')
 
     # Load training dataset to build vocabulary
     print("Loading training dataset...")
@@ -57,17 +57,18 @@ def main(args):
     model = Baseline(
         tokenizer=tokenizer,
         device=device,
-        resnet_model=args.resnet_model,
-        rnn_type=args.rnn_type,
-        freeze_encoder=(args.freeze_encoder == "yes")
+        resnet_model="microsoft/resnet-34",
+        rnn_type="GRU",
+        freeze_encoder=False
     )
     module = TrainWrapper(
         model=model,
         tokenizer=tokenizer,
-        learning_rate=args.learning_rate,
-        teacher_forcing_ratio=args.teacher_forcing_ratio,
+        learning_rate=3e-4,
+        teacher_forcing_ratio=0.253,
         batch_size=args.batch_size,
-        optimizer_type=args.optimizer
+        optimizer_type='adamw',
+        scheduler_type="cosine"
     )
 
     early_stopping = EarlyStopping(
@@ -87,7 +88,7 @@ def main(args):
     run = wandb.init(
         entity="C5-Team3",
         project="Captioning-Week3",
-        name=args.run_name,
+        name="Hyperparameter",
         config=vars(args)
     )
 
@@ -109,10 +110,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Image Captioning Model")
 
     parser.add_argument("--data_root", type=str, default="./data")
-    parser.add_argument("--tokenizer_type", type=str, default="character",
+    parser.add_argument("--tokenizer_type", type=str, default="word",
                         choices=["character", "word", "subword"],
                         help="Tokenizer type: character, word, or subword (BERT)")
-    parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-18")
+    parser.add_argument("--resnet_model", type=str, default="microsoft/resnet-34")
     parser.add_argument("--rnn_type", type=str, default="GRU", choices=["GRU", "LSTM"])
     parser.add_argument("--freeze_encoder", type=str, required=True, choices=["yes", "no"], help="Freeze encoder (ResNet) weights during training")
     parser.add_argument("--batch_size", type=int, default=128)

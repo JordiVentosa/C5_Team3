@@ -6,4 +6,4 @@
 #SBATCH -e logs/%x_%u_%j.err # File to which STDERR will be written
 
 # Run your program
-wandb agent C5-Team3/Captioning-Week3/9z6fkf7f
+python src/evaluate_lightning.py --checkpoint src/best_Baseline_resnet18_gru_lr-4.ckpt
