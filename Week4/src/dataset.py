@@ -15,7 +15,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 class VizWizDataset(Dataset):
-    def __init__(self, img_dir: str, ann_file:str, feature_extractor=None):
+    def __init__(self, img_dir: str, ann_file:str, feature_extractor=None, transform=None):
         """
         img_dir         : path to folder with .jpg images
         ann_file        : path to val.json / test.json
@@ -24,6 +24,7 @@ class VizWizDataset(Dataset):
         """
         self.img_dir = Path(img_dir)
         self.feature_extractor = feature_extractor
+        self.transform = transform
 
         with open(ann_file) as f:
             data = json.load(f)
@@ -55,6 +56,9 @@ class VizWizDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.samples[idx]
         img = Image.open(sample['image_path']).convert('RGB')
+
+        if self.transform is not None:
+            img = self.transform(img)
 
         if self.feature_extractor is not None:
             pixel_values = self.feature_extractor(
