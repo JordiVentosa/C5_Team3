@@ -23,6 +23,7 @@ import json
 import sys
 from pathlib import Path
 from functools import partial
+import random
 
 import wandb
 import torch
@@ -54,7 +55,7 @@ def train_collate_fn(batch, tokenizer, max_target_length=64):
     pixel_values = torch.stack([item["pixel_values"] for item in batch])
 
     # Pick the first reference caption as the training target
-    texts = [item["captions"][0] for item in batch]
+    texts = [random.choice(item["captions"]) for item in batch]
 
     encoding = tokenizer(
         texts,
@@ -191,10 +192,10 @@ def parse_args():
 
     # Training hyper-parameters
     parser.add_argument("--epochs",          type=int,   default=3)
-    parser.add_argument("--lr",              type=float, default=5e-5)
+    parser.add_argument("--lr",              type=float, default=None) #USELESS: DO NOT USE, is here for legacy reasons.
     parser.add_argument("--batch_size",      type=int,   default=16)
     parser.add_argument("--num_workers",     type=int,   default=4)
-    parser.add_argument("--warmup_steps",    type=int,   default=100)
+    parser.add_argument("--warmup_steps",    type=int,   default=1000)
     parser.add_argument("--max_target_len",  type=int,   default=64,
                         help="Max token length for target captions during training")
     parser.add_argument("--max_samples",     type=int,   default=None,
@@ -270,10 +271,11 @@ def main():
     if args.augment:
         train_transform = T.Compose([
             T.RandomHorizontalFlip(p=0.5),
-            T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
-            T.RandomRotation(degrees=10),
+            # Removed ColorJitter and heavy rotation. 
+            # VizWiz images are already noisy; applying slight affine translations mimics hand jitter.
+            T.RandomAffine(degrees=5, translate=(0.05, 0.05)),
         ])
-        print("[INFO] Training augmentations enabled.", flush=True)
+        print("[INFO] Training augmentations enabled (Mild Affine + Flip).", flush=True)
 
     # ---- Training dataset --------------------------------------------
     print("[INFO] Building training dataset...", flush=True)
@@ -300,6 +302,16 @@ def main():
         collate_fn=train_collate,
         pin_memory=(device.type == "cuda"),
     )
+
+    # ---- Dynamic Learning Rate Assignment -----------------------------
+    if args.lr is None:
+        if args.finetune_mode == "all":
+            args.lr = 1e-5
+        elif args.finetune_mode == "backbone":
+            args.lr = 2e-5
+        else: # captioner
+            args.lr = 5e-5
+        print(f"[INFO] Auto-selected learning rate: {args.lr} for mode: {args.finetune_mode}", flush=True)
 
     # ---- Optimiser & scheduler ----------------------------------------
     optimizer = AdamW(
