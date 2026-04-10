@@ -22,17 +22,32 @@ sys.path.append(str(Path(__file__).parent))
 from src.dataset import VizWizDataset
 from src.metrics import compute_metrics, print_metrics
 
+BASIC_PROMPT = "Describe this image briefly."
 
-CAPTION_PROMPT = "Describe this image briefly."
+ADVANCED_SYSTEM_PROMPT = (
+    "You are an image captioning assistant helping visually impaired people "
+    "understand their surroundings. Images may be blurry, poorly lit, or taken at unusual angles. "
+    "Describe what you see concisely and factually, focusing on the main subject."
+)
+ADVANCED_USER_PROMPT = "Describe this image in one short sentence. Output only the caption, nothing else."
 
 
-def make_messages(pil_image):
-    return [
-        {"role": "user", "content": [
-            {"type": "image", "image": pil_image},
-            {"type": "text", "text": CAPTION_PROMPT},
-        ]}
-    ]
+def make_messages(pil_image, prompt_mode="basic"):
+    if prompt_mode == "advanced":
+        return [
+            {"role": "system", "content": ADVANCED_SYSTEM_PROMPT},
+            {"role": "user", "content": [
+                {"type": "image", "image": pil_image},
+                {"type": "text", "text": ADVANCED_USER_PROMPT},
+            ]},
+        ]
+    else:
+        return [
+            {"role": "user", "content": [
+                {"type": "image", "image": pil_image},
+                {"type": "text", "text": BASIC_PROMPT},
+            ]},
+        ]
 
 
 def pil_collate_fn(batch):
@@ -43,31 +58,22 @@ def pil_collate_fn(batch):
     }
 
 
-def generate_captions(model, processor, dataloader, device, gen_kwargs):
+def generate_captions(model, processor, dataloader, device, gen_kwargs, prompt_mode="basic"):
     predictions, references, image_paths = [], [], []
     model.eval()
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Generating captions"):
-            batch_messages = [make_messages(img) for img in batch["images"]]
+            batch_messages = [make_messages(img, prompt_mode) for img in batch["images"]]
 
             texts = [
                 processor.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
                 for msgs in batch_messages
             ]
 
-            # Extract PIL images from the messages structure
-            image_inputs = [
-                content["image"]
-                for msgs in batch_messages
-                for msg in msgs
-                for content in msg["content"]
-                if content["type"] == "image"
-            ]
-
             inputs = processor(
                 text=texts,
-                images=image_inputs,
+                images=batch["images"],
                 return_tensors="pt",
                 padding=True,
             ).to(device)
@@ -98,12 +104,15 @@ def parse_args():
     parser.add_argument('--batch_size', type=int,
                         default=4, help="Batch size for generation")
     parser.add_argument('--num_workers', type=int,
-                        default=4, help="Number of workers for DataLoader")
+                        default=0, help="Number of workers for DataLoader (0 recomendado con PIL)")
     parser.add_argument('--model_name', type=str,
                         default="Qwen/Qwen2.5-VL-7B-Instruct",
                         help="HuggingFace model name")
     parser.add_argument('--max_samples', type=int, default=None,
                         help="Limit number of samples to process (for quick testing)")
+    parser.add_argument('--prompt_mode', type=str, default="basic",
+                        choices=["basic", "advanced"],
+                        help="Prompt mode: basic (simple) or advanced (system prompt + detailed instruction)")
     return parser.parse_args()
 
 
@@ -152,9 +161,10 @@ def main():
     )
 
     # GENERATE CAPTIONS
+    print(f"[INFO] Prompt mode: {args.prompt_mode}", flush=True)
     print("[INFO] Starting caption generation...", flush=True)
     predictions, references, image_paths = generate_captions(
-        model, processor, dataloader, device, gen_kwargs
+        model, processor, dataloader, device, gen_kwargs, args.prompt_mode
     )
     print(f"[INFO] Generation done. {len(predictions)} captions.", flush=True)
 
@@ -169,7 +179,7 @@ def main():
 
     metrics_path = Path(args.output_file + "_metrics.json")
     with open(metrics_path, 'w') as f:
-        json.dump({"model_name": args.model_name, "metrics": metrics}, f, indent=4)
+        json.dump({"model_name": args.model_name, "prompt_mode": args.prompt_mode, "metrics": metrics}, f, indent=4)
     print(f"[INFO] Saved metrics to {metrics_path}")
 
     preds_path = out_dir / (Path(args.output_file).stem + "_predictions.json")
