@@ -27,13 +27,15 @@ import sys
 from pathlib import Path
 from functools import partial
 
+import wandb
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
+from torchvision import transforms as T
 from transformers import (
-    ViTModel,
     ViTImageProcessor,
+    VisionEncoderDecoderModel,
     AutoModelForCausalLM,
     AutoTokenizer,
     get_linear_schedule_with_warmup,
@@ -67,9 +69,11 @@ class ViTQwenCaptioner(nn.Module):
         self.qwen = qwen_model
 
     def _get_visual_embeds(self, pixel_values):
+        qwen_dtype = next(self.qwen.parameters()).dtype
         with torch.no_grad():
-            vit_out = self.vit(pixel_values).last_hidden_state  # (B, N_vis, 768)
-        return self.projection(vit_out)  # (B, N_vis, qwen_hidden)
+            vit_out = self.vit(pixel_values.to(torch.float32)).last_hidden_state  # (B, N_vis, 768)
+        proj = self.projection(vit_out)  # (B, N_vis, qwen_hidden) in float32
+        return proj.to(qwen_dtype)
 
     def forward(self, pixel_values, input_ids, attention_mask, labels):
         visual_embeds = self._get_visual_embeds(pixel_values)  # (B, N_vis, H)
@@ -151,11 +155,12 @@ def train_collate_fn(batch, tokenizer, max_target_length=64):
 # Training & evaluation
 # ---------------------------------------------------------------------------
 
-def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch):
+def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch,
+                    use_wandb=False, step_offset=0):
     model.train()
     total_loss = 0.0
 
-    for batch in tqdm(dataloader, desc=f"Epoch {epoch} [train]"):
+    for i, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch} [train]")):
         pixel_values = batch["pixel_values"].to(device)
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
@@ -178,9 +183,13 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch):
         scheduler.step()
 
         total_loss += loss.item()
+        if use_wandb:
+            wandb.log({"train/loss_step": loss.item(), "step": step_offset + i})
 
     avg_loss = total_loss / len(dataloader)
     print(f"[INFO] Epoch {epoch} - avg train loss: {avg_loss:.4f}")
+    if use_wandb:
+        wandb.log({"train/loss_epoch": avg_loss, "epoch": epoch})
     return avg_loss
 
 
@@ -248,6 +257,16 @@ def parse_args():
                         help="Early stopping patience (requires val set)")
 
     parser.add_argument("--output_dir", type=str, default="outputs/task2_2")
+
+    parser.add_argument("--wandb_project", type=str, default=None,
+                        help="WandB project name. If not set, WandB logging is disabled.")
+    parser.add_argument("--wandb_run_name", type=str, default=None,
+                        help="WandB run name (optional).")
+
+    # Augmentations
+    parser.add_argument("--augment", action="store_true",
+                        help="Apply random augmentations to training images.")
+
     return parser.parse_args()
 
 
@@ -264,10 +283,24 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # ---- WandB setup -------------------------------------------------------
+    use_wandb = args.wandb_project is not None
+    if use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+            config=vars(args),
+        )
+        print(f"[INFO] WandB logging enabled: project={args.wandb_project}", flush=True)
+    else:
+        print("[INFO] WandB logging disabled (no --wandb_project set).", flush=True)
+
     # ---- Load ViT encoder (frozen) ------------------------------------
     print(f"[INFO] Loading ViT encoder from {args.encoder_dir}", flush=True)
-    vit_encoder = ViTModel.from_pretrained(args.encoder_dir)
-    feature_extractor = ViTImageProcessor.from_pretrained(args.encoder_dir)
+    _full_model = VisionEncoderDecoderModel.from_pretrained(args.encoder_dir)
+    vit_encoder = _full_model.encoder
+    del _full_model
+    feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
     vit_hidden_size = vit_encoder.config.hidden_size  # 768
 
     vit_encoder.eval()
@@ -314,12 +347,22 @@ def main():
     total = sum(p.numel() for p in model.parameters())
     print(f"[INFO] Trainable parameters: {trainable:,} / {total:,}")
 
+    # ---- Augmentations (training only) ------------------------------------
+    train_transform = None
+    if args.augment:
+        train_transform = T.Compose([
+            T.RandomHorizontalFlip(p=0.5),
+            T.RandomAffine(degrees=5, translate=(0.05, 0.05)),
+        ])
+        print("[INFO] Training augmentations enabled (Mild Affine + Flip).", flush=True)
+
     # ---- Datasets -----------------------------------------------------
     print("[INFO] Building training dataset...", flush=True)
     train_dataset = VizWizDataset(
         img_dir=args.train_img_dir,
         ann_file=args.train_ann_file,
         feature_extractor=feature_extractor,
+        transform=train_transform,
     )
     if args.max_samples is not None:
         train_dataset.samples = train_dataset.samples[:args.max_samples]
@@ -378,8 +421,10 @@ def main():
     epochs_no_improve = 0
 
     for epoch in range(1, args.epochs + 1):
+        step_offset = (epoch - 1) * len(train_loader)
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, scheduler, device, epoch
+            model, train_loader, optimizer, scheduler, device, epoch,
+            use_wandb=use_wandb, step_offset=step_offset,
         )
         epoch_info = {"epoch": epoch, "train_loss": train_loss}
 
@@ -390,6 +435,8 @@ def main():
             metrics = compute_metrics(preds, refs)
             print_metrics(metrics, title=f"Epoch {epoch} Validation Metrics")
             epoch_info["val_metrics"] = metrics
+            if use_wandb:
+                wandb.log({"val/" + k: v for k, v in metrics.items()} | {"epoch": epoch})
 
             val_score = sum(metrics.values()) / len(metrics)
             if val_score > best_val_score:
@@ -444,6 +491,9 @@ def main():
             indent=4,
         )
     print(f"[INFO] Training history saved to {history_path}")
+
+    if use_wandb:
+        wandb.finish()
 
 
 if __name__ == "__main__":

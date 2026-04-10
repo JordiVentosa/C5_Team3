@@ -142,6 +142,25 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch,
 
 
 
+def compute_val_loss(model, dataloader, device, epoch, use_wandb=False):
+    model.eval()
+    total_loss = 0.0
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc=f"Epoch {epoch} [val loss]"):
+            pixel_values = batch["pixel_values"].to(device)
+            labels = batch["labels"].to(device)
+
+            outputs = model(pixel_values=pixel_values, labels=labels)
+            total_loss += outputs.loss.item()
+
+    avg_loss = total_loss / len(dataloader)
+    print(f"[INFO] Epoch {epoch} — avg val loss: {avg_loss:.4f}")
+    if use_wandb:
+        wandb.log({"val/loss_epoch": avg_loss, "epoch": epoch})
+    return avg_loss
+
+
 def generate_captions(model, tokenizer, dataloader, device, gen_kwargs):
     predictions, references, image_paths = [], [], []
     model.eval()
@@ -191,7 +210,7 @@ def parse_args():
                         ))
 
     # Training hyper-parameters
-    parser.add_argument("--epochs",          type=int,   default=3)
+    parser.add_argument("--epochs",          type=int,   default=10)
     parser.add_argument("--lr",              type=float, default=None) #USELESS: DO NOT USE, is here for legacy reasons.
     parser.add_argument("--batch_size",      type=int,   default=16)
     parser.add_argument("--num_workers",     type=int,   default=4)
@@ -327,6 +346,7 @@ def main():
 
     # ---- Validation dataset (optional) --------------------------------
     val_loader = None
+    val_loss_loader = None
     if args.val_img_dir and args.val_ann_file:
         print("[INFO] Building validation dataset...", flush=True)
         val_dataset = VizWizDataset(
@@ -340,6 +360,19 @@ def main():
             shuffle=False,
             num_workers=args.num_workers,
             collate_fn=collate_fn,
+            pin_memory=(device.type == "cuda"),
+        )
+        val_collate = partial(
+            train_collate_fn,
+            tokenizer=tokenizer,
+            max_target_length=args.max_target_len,
+        )
+        val_loss_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            collate_fn=val_collate,
             pin_memory=(device.type == "cuda"),
         )
 
@@ -364,6 +397,11 @@ def main():
         epoch_info = {"epoch": epoch, "train_loss": train_loss}
 
         if val_loader is not None:
+            val_loss = compute_val_loss(
+                model, val_loss_loader, device, epoch, use_wandb=use_wandb
+            )
+            epoch_info["val_loss"] = val_loss
+
             preds, refs, _ = generate_captions(
                 model, tokenizer, val_loader, device, gen_kwargs
             )
