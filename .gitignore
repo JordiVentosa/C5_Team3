@@ -13,3 +13,5 @@ wandb/
 *.sh
 
 logs/
+
+job*
