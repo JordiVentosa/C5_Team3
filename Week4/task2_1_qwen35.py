@@ -1,0 +1,201 @@
+"""
+Task 2.1 - Evaluate using Qwen/Qwen3.5-9B on VizWiz
+
+Qwen3.5-9B has vision integrated natively (no -VL suffix needed).
+
+Use:
+    python task2_1_qwen35.py \
+        --img_dir data/vizwiz/val \
+        --ann_file data/vizwiz/annotations/val.json \
+        --output_file outputs/task2_1_qwen35 \
+        --prompt_mode basic
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+from transformers import Qwen3_5ForConditionalGeneration, AutoProcessor
+from tqdm import tqdm
+
+sys.path.append(str(Path(__file__).parent))
+from src.dataset import VizWizDataset
+from src.metrics import compute_metrics, print_metrics
+
+
+BASIC_PROMPT = "Describe this image briefly."
+
+ADVANCED_SYSTEM_PROMPT = (
+    "You are an image captioning assistant helping visually impaired people "
+    "understand their surroundings. Images may be blurry, poorly lit, or taken at unusual angles. "
+    "Describe what you see concisely and factually, focusing on the main subject."
+)
+ADVANCED_USER_PROMPT = "Describe this image in one short sentence. Output only the caption, nothing else."
+
+
+def make_messages(pil_image, prompt_mode="basic"):
+    if prompt_mode == "advanced":
+        return [
+            {"role": "system", "content": ADVANCED_SYSTEM_PROMPT},
+            {"role": "user", "content": [
+                {"type": "image", "image": pil_image},
+                {"type": "text", "text": ADVANCED_USER_PROMPT},
+            ]},
+        ]
+    else:
+        return [
+            {"role": "user", "content": [
+                {"type": "image", "image": pil_image},
+                {"type": "text", "text": BASIC_PROMPT},
+            ]},
+        ]
+
+
+def pil_collate_fn(batch):
+    return {
+        "images":      [item["image"]      for item in batch],
+        "captions":    [item["captions"]   for item in batch],
+        "image_paths": [item["image_path"] for item in batch],
+    }
+
+
+def generate_captions(model, processor, dataloader, device, gen_kwargs, prompt_mode="basic"):
+    predictions, references, image_paths = [], [], []
+    model.eval()
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Generating captions"):
+            batch_messages = [make_messages(img, prompt_mode) for img in batch["images"]]
+
+            texts = [
+                processor.apply_chat_template(
+                    msgs,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+                for msgs in batch_messages
+            ]
+
+            inputs = processor(
+                text=texts,
+                images=batch["images"],
+                return_tensors="pt",
+                padding=True,
+            ).to(model.device)
+
+            input_len = inputs["input_ids"].shape[-1]
+            output_ids = model.generate(**inputs, **gen_kwargs)
+
+            new_tokens = output_ids[:, input_len:]
+            captions = processor.batch_decode(new_tokens, skip_special_tokens=True)
+            captions = [cap.strip().lower() for cap in captions]
+
+            predictions.extend(captions)
+            references.extend(batch["captions"])
+            image_paths.extend(batch["image_paths"])
+
+    return predictions, references, image_paths
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate Qwen3.5-9B on VizWiz")
+    parser.add_argument('--img_dir', type=str, required=True,
+                        help="Path to folder with .jpg images")
+    parser.add_argument('--ann_file', type=str, required=True,
+                        help="Path to val.json / test.json")
+    parser.add_argument('--output_file', type=str,
+                        default="outputs/task2_1_qwen35",
+                        help="Path to save generated captions and metrics")
+    parser.add_argument('--batch_size', type=int,
+                        default=2, help="Batch size for generation")
+    parser.add_argument('--num_workers', type=int,
+                        default=0, help="Number of workers for DataLoader (0 recomendado con PIL)")
+    parser.add_argument('--model_name', type=str,
+                        default="Qwen/Qwen3.5-9B",
+                        help="HuggingFace model name")
+    parser.add_argument('--max_samples', type=int, default=None,
+                        help="Limit number of samples to process (for quick testing)")
+    parser.add_argument('--prompt_mode', type=str, default="basic",
+                        choices=["basic", "advanced"],
+                        help="Prompt mode: basic (simple) or advanced (system prompt + detailed instruction)")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    print("[INFO] device check...", flush=True)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"[INFO] Using device: {device}", flush=True)
+
+    print(f"[INFO] Loading processor: {args.model_name}", flush=True)
+    processor = AutoProcessor.from_pretrained(args.model_name, trust_remote_code=True)
+    processor.tokenizer.padding_side = "left"
+    print("[INFO] Loading model...", flush=True)
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(
+        args.model_name,
+        dtype=torch.bfloat16,
+        device_map="auto",
+    )
+    print("[INFO] Model loaded.", flush=True)
+
+    gen_kwargs = {
+        "max_new_tokens": 64,
+        "do_sample": False,
+    }
+
+    print("[INFO] Building dataset...", flush=True)
+    dataset = VizWizDataset(
+        img_dir=args.img_dir,
+        ann_file=args.ann_file,
+        feature_extractor=None,
+    )
+
+    if args.max_samples is not None:
+        dataset.samples = dataset.samples[:args.max_samples]
+        print(f"[INFO] Limiting to {args.max_samples} samples for quick testing", flush=True)
+
+    print(f"[INFO] Building dataloader ({len(dataset)} samples, batch={args.batch_size})...", flush=True)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=pil_collate_fn,
+        pin_memory=False,
+    )
+
+    print(f"[INFO] Prompt mode: {args.prompt_mode}", flush=True)
+    print("[INFO] Starting caption generation...", flush=True)
+    predictions, references, image_paths = generate_captions(
+        model, processor, dataloader, device, gen_kwargs, args.prompt_mode
+    )
+    print(f"[INFO] Generation done. {len(predictions)} captions.", flush=True)
+
+    print("[INFO] Computing metrics...", flush=True)
+    metrics = compute_metrics(predictions, references)
+    print_metrics(metrics, title="Qwen3.5-9B Metrics")
+
+    out_dir = Path(args.output_file).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics_path = Path(args.output_file + "_metrics.json")
+    with open(metrics_path, 'w') as f:
+        json.dump({"model_name": args.model_name, "prompt_mode": args.prompt_mode, "metrics": metrics}, f, indent=4)
+    print(f"[INFO] Saved metrics to {metrics_path}")
+
+    preds_path = out_dir / (Path(args.output_file).stem + "_predictions.json")
+    with open(preds_path, 'w') as f:
+        json.dump([
+            {"image": p, "predicted_caption": pred, "reference_captions": refs}
+            for p, pred, refs in zip(image_paths, predictions, references)
+        ], f)
+    print(f"[INFO] Saved predictions to {preds_path}")
+
+
+if __name__ == "__main__":
+    main()
