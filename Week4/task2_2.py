@@ -1,23 +1,34 @@
 """
-Task 2.2 - Fine-tune Qwen2.5 decoder with LoRA using a frozen ViT encoder
+task2_2.py
+Fine-tune a Qwen3.5 decoder with LoRA using a frozen ViT encoder.
 
 Architecture:
-    Frozen ViT encoder (from Task 1.2) -> Projection MLP -> Qwen2.5 LM (with LoRA)
+    Frozen ViT (nlpconnect/vit-gpt2-image-captioning) -> Projection MLP -> Qwen3.5 + LoRA
 
-The ViT encoder extracts visual features from images, a learned projection
-maps them to Qwen's embedding space, and the Qwen decoder generates captions
-with LoRA adapters on the attention layers.
+Since the best Task 1.2 model only trained the GPT2 decoder (captioner mode),
+the ViT encoder is unchanged from the original pretrained weights.
+We therefore load it directly from the local model path — no checkpoint needed.
 
 Usage:
+    # Qwen3.5-0.8B with r=8, alpha=16
     python task2_2.py \
-        --encoder_dir outputs/vit_encoder \
         --train_img_dir  data/vizwiz/train \
         --train_ann_file data/vizwiz/annotations/train.json \
         --val_img_dir    data/vizwiz/val \
         --val_ann_file   data/vizwiz/annotations/val.json \
-        --output_dir     outputs/task2_2 \
-        --qwen_model     Qwen/Qwen2.5-1.5B \
+        --vit_model      /home/mcvstudent20/C5_Team3/Week4/modelo_vit_gpt2 \
+        --qwen_model     /home/mcvstudent20/C5_Team3/Week4/modelo_qwen35_0.8b \
+        --output_dir     outputs/task2_2_qwen35_0.8b_r8a16 \
+        --lora_r 8 --lora_alpha 16 \
         --epochs 5 --lr 1e-4
+
+    # Qwen3.5-4B with r=8, alpha=16
+    python task2_2.py \
+        --vit_model      /home/mcvstudent20/C5_Team3/Week4/modelo_vit_gpt2 \
+        --qwen_model     /home/mcvstudent20/C5_Team3/Week4/modelo_qwen35_4b \
+        --output_dir     outputs/task2_2_qwen35_4b_r8a16 \
+        --lora_r 8 --lora_alpha 16 \
+        ...
 """
 
 import argparse
@@ -27,7 +38,6 @@ import sys
 from pathlib import Path
 from functools import partial
 
-import wandb
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -48,13 +58,13 @@ from src.dataset import VizWizDataset, collate_fn
 from src.metrics import compute_metrics, print_metrics
 
 
-# ---------------------------------------------------------------------------
-# Model: ViT encoder + projection + Qwen decoder with LoRA
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Model
+# ─────────────────────────────────────────────────────────────────────────────
 
 class ViTQwenCaptioner(nn.Module):
     """
-    Frozen ViT encoder -> Projection MLP -> Qwen2.5 decoder (LoRA).
+    Frozen ViT encoder -> Projection MLP -> Qwen3.5 decoder (LoRA).
     Visual features are prepended to the text embeddings as prefix tokens.
     """
 
@@ -69,25 +79,26 @@ class ViTQwenCaptioner(nn.Module):
         self.qwen = qwen_model
 
     def _get_visual_embeds(self, pixel_values):
+        """Runs frozen ViT and projects features to Qwen's embedding space."""
         qwen_dtype = next(self.qwen.parameters()).dtype
         with torch.no_grad():
-            vit_out = self.vit(pixel_values.to(torch.float32)).last_hidden_state  # (B, N_vis, 768)
-        proj = self.projection(vit_out)  # (B, N_vis, qwen_hidden) in float32
+            vit_out = self.vit(pixel_values.to(torch.float32)).last_hidden_state  # [B, N, 768]
+        proj = self.projection(vit_out)
         return proj.to(qwen_dtype)
 
     def forward(self, pixel_values, input_ids, attention_mask, labels):
-        visual_embeds = self._get_visual_embeds(pixel_values)  # (B, N_vis, H)
-        text_embeds = self.qwen.get_input_embeddings()(input_ids)  # (B, T, H)
+        visual_embeds = self._get_visual_embeds(pixel_values)  # [B, N_vis, H]
+        text_embeds   = self.qwen.get_input_embeddings()(input_ids)  # [B, T, H]
 
-        # Concatenate: [visual_tokens | text_tokens]
         inputs_embeds = torch.cat([visual_embeds, text_embeds], dim=1)
 
         B, N_vis = visual_embeds.shape[:2]
-        vis_attn = torch.ones(B, N_vis, device=pixel_values.device, dtype=attention_mask.dtype)
+        vis_attn  = torch.ones(B, N_vis, device=pixel_values.device,
+                               dtype=attention_mask.dtype)
         full_attn = torch.cat([vis_attn, attention_mask], dim=1)
 
-        # Labels: -100 for visual positions (ignored in loss)
-        vis_labels = torch.full((B, N_vis), -100, device=labels.device, dtype=labels.dtype)
+        vis_labels  = torch.full((B, N_vis), -100,
+                                 device=labels.device, dtype=labels.dtype)
         full_labels = torch.cat([vis_labels, labels], dim=1)
 
         outputs = self.qwen(
@@ -97,18 +108,19 @@ class ViTQwenCaptioner(nn.Module):
         )
         return outputs
 
+    @torch.no_grad()
     def generate(self, pixel_values, tokenizer, max_new_tokens=64, **gen_kwargs):
-        visual_embeds = self._get_visual_embeds(pixel_values)  # (B, N_vis, H)
-
+        visual_embeds = self._get_visual_embeds(pixel_values)
         B, N_vis = visual_embeds.shape[:2]
 
-        # Use BOS token as the start of generation
-        bos_id = tokenizer.bos_token_id or tokenizer.eos_token_id
-        start_ids = torch.full((B, 1), bos_id, device=pixel_values.device, dtype=torch.long)
+        bos_id       = tokenizer.bos_token_id or tokenizer.eos_token_id
+        start_ids    = torch.full((B, 1), bos_id,
+                                  device=pixel_values.device, dtype=torch.long)
         start_embeds = self.qwen.get_input_embeddings()(start_ids)
 
         inputs_embeds = torch.cat([visual_embeds, start_embeds], dim=1)
-        attn_mask = torch.ones(B, N_vis + 1, device=pixel_values.device, dtype=torch.long)
+        attn_mask     = torch.ones(B, N_vis + 1,
+                                   device=pixel_values.device, dtype=torch.long)
 
         output_ids = self.qwen.generate(
             inputs_embeds=inputs_embeds,
@@ -119,11 +131,12 @@ class ViTQwenCaptioner(nn.Module):
         return output_ids
 
 
-# ---------------------------------------------------------------------------
-# Collate for training (tokenises captions as labels)
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Collate for training
+# ─────────────────────────────────────────────────────────────────────────────
 
 def train_collate_fn(batch, tokenizer, max_target_length=64):
+    """Stacks pixel_values and tokenises one random reference caption per image."""
     pixel_values = torch.stack([item["pixel_values"] for item in batch])
     texts = [random.choice(item["captions"]) for item in batch]
 
@@ -134,37 +147,35 @@ def train_collate_fn(batch, tokenizer, max_target_length=64):
         truncation=True,
         return_tensors="pt",
     )
-    input_ids = encoding.input_ids
+    input_ids      = encoding.input_ids
     attention_mask = encoding.attention_mask
 
-    # Labels = input_ids shifted; padding tokens -> -100
     labels = input_ids.clone()
     labels[labels == tokenizer.pad_token_id] = -100
 
     return {
-        "pixel_values": pixel_values,
-        "input_ids": input_ids,
+        "pixel_values":   pixel_values,
+        "input_ids":      input_ids,
         "attention_mask": attention_mask,
-        "labels": labels,
-        "captions": [item["captions"] for item in batch],
-        "image_paths": [item["image_path"] for item in batch],
+        "labels":         labels,
+        "captions":       [item["captions"]   for item in batch],
+        "image_paths":    [item["image_path"] for item in batch],
     }
 
 
-# ---------------------------------------------------------------------------
-# Training & evaluation
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Training helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
-def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch,
-                    use_wandb=False, step_offset=0):
+def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch, log_every=50):
     model.train()
     total_loss = 0.0
 
-    for i, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch} [train]")):
-        pixel_values = batch["pixel_values"].to(device)
-        input_ids = batch["input_ids"].to(device)
+    for step, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch} [train]"), start=1):
+        pixel_values   = batch["pixel_values"].to(device)
+        input_ids      = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
-        labels = batch["labels"].to(device)
+        labels         = batch["labels"].to(device)
 
         outputs = model(
             pixel_values=pixel_values,
@@ -183,13 +194,13 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, device, epoch,
         scheduler.step()
 
         total_loss += loss.item()
-        if use_wandb:
-            wandb.log({"train/loss_step": loss.item(), "step": step_offset + i})
+
+        if step % log_every == 0:
+            avg_so_far = total_loss / step
+            print(f"[INFO] Epoch {epoch} step {step}/{len(dataloader)} — loss: {loss.item():.4f} | avg: {avg_so_far:.4f}", flush=True)
 
     avg_loss = total_loss / len(dataloader)
-    print(f"[INFO] Epoch {epoch} - avg train loss: {avg_loss:.4f}")
-    if use_wandb:
-        wandb.log({"train/loss_epoch": avg_loss, "epoch": epoch})
+    print(f"[INFO] Epoch {epoch} — avg train loss: {avg_loss:.4f}")
     return avg_loss
 
 
@@ -216,34 +227,36 @@ def evaluate(model, tokenizer, dataloader, device, gen_kwargs):
     return predictions, references, image_paths
 
 
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Task 2.2 - ViT encoder + Qwen decoder with LoRA"
+        description="Task 2.2 — Frozen ViT + Qwen3.5 decoder with LoRA"
     )
-    # Encoder
-    parser.add_argument("--encoder_dir", type=str, required=True,
-                        help="Path to saved ViT encoder (from save_encoder.py)")
-
     # Data
-    parser.add_argument("--train_img_dir",  type=str, required=True)
-    parser.add_argument("--train_ann_file", type=str, required=True)
-    parser.add_argument("--val_img_dir",    type=str, default=None)
-    parser.add_argument("--val_ann_file",   type=str, default=None)
+    parser.add_argument("--train_img_dir",  required=True)
+    parser.add_argument("--train_ann_file", required=True)
+    parser.add_argument("--val_img_dir",    default=None)
+    parser.add_argument("--val_ann_file",   default=None)
 
-    # Qwen decoder
-    parser.add_argument("--qwen_model", type=str, default="Qwen/Qwen2.5-1.5B",
-                        help="HuggingFace Qwen text model (e.g. Qwen/Qwen2.5-1.5B, Qwen/Qwen2.5-3B)")
+    # ViT encoder — local path (offline cluster)
+    parser.add_argument("--vit_model", type=str, required=True,
+                        help="Local path to vit-gpt2 model "
+                             "(e.g. /home/.../modelo_vit_gpt2)")
+
+    # Qwen3.5 decoder — local path
+    parser.add_argument("--qwen_model", type=str, required=True,
+                        help="Local path to Qwen3.5 text model "
+                             "(e.g. /home/.../modelo_qwen35_0.8b)")
 
     # LoRA
-    parser.add_argument("--lora_r",       type=int,   default=16)
-    parser.add_argument("--lora_alpha",   type=int,   default=32)
+    parser.add_argument("--lora_r",       type=int,   default=8)
+    parser.add_argument("--lora_alpha",   type=int,   default=16)
     parser.add_argument("--lora_dropout", type=float, default=0.05)
-    parser.add_argument("--lora_targets", type=str,   default="q_proj,v_proj,k_proj,o_proj",
-                        help="Comma-separated list of target modules for LoRA")
+    parser.add_argument("--lora_targets", type=str,
+                        default="q_proj,v_proj,k_proj,o_proj")
 
     # Training
     parser.add_argument("--epochs",         type=int,   default=5)
@@ -253,26 +266,17 @@ def parse_args():
     parser.add_argument("--warmup_steps",   type=int,   default=100)
     parser.add_argument("--max_target_len", type=int,   default=64)
     parser.add_argument("--max_samples",    type=int,   default=None)
-    parser.add_argument("--patience",       type=int,   default=None,
-                        help="Early stopping patience (requires val set)")
+    parser.add_argument("--patience",       type=int,   default=None)
+    parser.add_argument("--augment",        action="store_true")
 
     parser.add_argument("--output_dir", type=str, default="outputs/task2_2")
-
-    parser.add_argument("--wandb_project", type=str, default=None,
-                        help="WandB project name. If not set, WandB logging is disabled.")
-    parser.add_argument("--wandb_run_name", type=str, default=None,
-                        help="WandB run name (optional).")
-
-    # Augmentations
-    parser.add_argument("--augment", action="store_true",
-                        help="Apply random augmentations to training images.")
 
     return parser.parse_args()
 
 
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 def main():
     args = parse_args()
@@ -283,47 +287,35 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---- WandB setup -------------------------------------------------------
-    use_wandb = args.wandb_project is not None
-    if use_wandb:
-        wandb.init(
-            project=args.wandb_project,
-            name=args.wandb_run_name,
-            config=vars(args),
-        )
-        print(f"[INFO] WandB logging enabled: project={args.wandb_project}", flush=True)
-    else:
-        print("[INFO] WandB logging disabled (no --wandb_project set).", flush=True)
-
-    # ---- Load ViT encoder (frozen) ------------------------------------
-    print(f"[INFO] Loading ViT encoder from {args.encoder_dir}", flush=True)
-    _full_model = VisionEncoderDecoderModel.from_pretrained(args.encoder_dir)
-    vit_encoder = _full_model.encoder
-    del _full_model
-    feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-    vit_hidden_size = vit_encoder.config.hidden_size  # 768
+    # ── Load frozen ViT encoder ───────────────────────────────────────────────
+    print(f"[INFO] Loading ViT encoder from: {args.vit_model}", flush=True)
+    _full = VisionEncoderDecoderModel.from_pretrained(args.vit_model)
+    vit_encoder       = _full.encoder
+    feature_extractor = ViTImageProcessor.from_pretrained(args.vit_model)
+    del _full
 
     vit_encoder.eval()
-    for param in vit_encoder.parameters():
-        param.requires_grad = False
-    print(f"[INFO] ViT encoder loaded (frozen). Hidden size: {vit_hidden_size}")
+    for p in vit_encoder.parameters():
+        p.requires_grad = False
+    vit_hidden_size = vit_encoder.config.hidden_size  # 768
+    print(f"[INFO] ViT encoder frozen. Hidden size: {vit_hidden_size}")
 
-    # ---- Load Qwen decoder + LoRA ------------------------------------
-    print(f"[INFO] Loading Qwen model: {args.qwen_model}", flush=True)
+    # ── Load Qwen3.5 decoder ──────────────────────────────────────────────────
+    print(f"[INFO] Loading Qwen3.5 from: {args.qwen_model}", flush=True)
     qwen_tokenizer = AutoTokenizer.from_pretrained(args.qwen_model)
-    qwen_model = AutoModelForCausalLM.from_pretrained(
+    qwen_model     = AutoModelForCausalLM.from_pretrained(
         args.qwen_model,
         torch_dtype=torch.bfloat16,
     )
     qwen_hidden_size = qwen_model.config.hidden_size
 
     if qwen_tokenizer.pad_token is None:
-        qwen_tokenizer.pad_token = qwen_tokenizer.eos_token
+        qwen_tokenizer.pad_token       = qwen_tokenizer.eos_token
         qwen_model.config.pad_token_id = qwen_tokenizer.pad_token_id
 
-    # Apply LoRA
+    # ── Apply LoRA ────────────────────────────────────────────────────────────
     lora_targets = [t.strip() for t in args.lora_targets.split(",")]
-    lora_config = LoraConfig(
+    lora_config  = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
         target_modules=lora_targets,
@@ -334,7 +326,7 @@ def main():
     qwen_model = get_peft_model(qwen_model, lora_config)
     qwen_model.print_trainable_parameters()
 
-    # ---- Build combined model -----------------------------------------
+    # ── Build combined model ──────────────────────────────────────────────────
     model = ViTQwenCaptioner(
         vit_encoder=vit_encoder,
         qwen_model=qwen_model,
@@ -342,21 +334,20 @@ def main():
         qwen_hidden_size=qwen_hidden_size,
     ).to(device)
 
-    # Count trainable params (LoRA + projection)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total = sum(p.numel() for p in model.parameters())
-    print(f"[INFO] Trainable parameters: {trainable:,} / {total:,}")
+    total     = sum(p.numel() for p in model.parameters())
+    print(f"[INFO] Trainable params: {trainable:,} / {total:,}")
 
-    # ---- Augmentations (training only) ------------------------------------
+    # ── Augmentations ─────────────────────────────────────────────────────────
     train_transform = None
     if args.augment:
         train_transform = T.Compose([
             T.RandomHorizontalFlip(p=0.5),
             T.RandomAffine(degrees=5, translate=(0.05, 0.05)),
         ])
-        print("[INFO] Training augmentations enabled (Mild Affine + Flip).", flush=True)
+        print("[INFO] Augmentations enabled.")
 
-    # ---- Datasets -----------------------------------------------------
+    # ── Datasets ──────────────────────────────────────────────────────────────
     print("[INFO] Building training dataset...", flush=True)
     train_dataset = VizWizDataset(
         img_dir=args.train_img_dir,
@@ -364,21 +355,17 @@ def main():
         feature_extractor=feature_extractor,
         transform=train_transform,
     )
-    if args.max_samples is not None:
+    if args.max_samples:
         train_dataset.samples = train_dataset.samples[:args.max_samples]
         print(f"[INFO] Limiting to {args.max_samples} training samples.")
 
-    train_collate = partial(
-        train_collate_fn,
-        tokenizer=qwen_tokenizer,
-        max_target_length=args.max_target_len,
-    )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
-        collate_fn=train_collate,
+        collate_fn=partial(train_collate_fn, tokenizer=qwen_tokenizer,
+                           max_target_length=args.max_target_len),
         pin_memory=(device.type == "cuda"),
     )
 
@@ -399,32 +386,30 @@ def main():
             pin_memory=(device.type == "cuda"),
         )
 
-    # ---- Optimizer & scheduler ----------------------------------------
-    optimizer = AdamW(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=args.lr,
-    )
+    # ── Optimizer & scheduler ─────────────────────────────────────────────────
+    optimizer   = AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr)
     total_steps = len(train_loader) * args.epochs
-    scheduler = get_linear_schedule_with_warmup(
+    scheduler   = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=args.warmup_steps,
         num_training_steps=total_steps,
     )
 
     gen_kwargs = {
-        "do_sample": False,
+        "max_new_tokens": 64,
+        "do_sample":      False,
+        "eos_token_id":   qwen_tokenizer.eos_token_id,
+        "pad_token_id":   qwen_tokenizer.pad_token_id,
     }
 
-    # ---- Training loop ------------------------------------------------
-    history = []
-    best_val_score = -float("inf")
+    # ── Training loop ─────────────────────────────────────────────────────────
+    history           = []
+    best_val_score    = -float("inf")
     epochs_no_improve = 0
 
     for epoch in range(1, args.epochs + 1):
-        step_offset = (epoch - 1) * len(train_loader)
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, scheduler, device, epoch,
-            use_wandb=use_wandb, step_offset=step_offset,
+            model, train_loader, optimizer, scheduler, device, epoch
         )
         epoch_info = {"epoch": epoch, "train_loss": train_loss}
 
@@ -433,67 +418,56 @@ def main():
                 model, qwen_tokenizer, val_loader, device, gen_kwargs
             )
             metrics = compute_metrics(preds, refs)
-            print_metrics(metrics, title=f"Epoch {epoch} Validation Metrics")
+            print_metrics(metrics, title=f"Epoch {epoch} Validation")
             epoch_info["val_metrics"] = metrics
-            if use_wandb:
-                wandb.log({"val/" + k: v for k, v in metrics.items()} | {"epoch": epoch})
 
             val_score = sum(metrics.values()) / len(metrics)
             if val_score > best_val_score:
-                best_val_score = val_score
+                best_val_score    = val_score
                 epochs_no_improve = 0
                 best_path = output_dir / "best_model"
-                best_path.mkdir(parents=True, exist_ok=True)
-                # Save LoRA adapters + projection
+                best_path.mkdir(exist_ok=True)
                 model.qwen.save_pretrained(best_path / "qwen_lora")
                 torch.save(model.projection.state_dict(), best_path / "projection.pt")
-                print(f"[INFO] New best val score: {val_score:.4f} - saved to {best_path}")
+                print(f"[INFO] New best: {val_score:.4f} — saved to {best_path}")
             else:
                 epochs_no_improve += 1
-                print(f"[INFO] No improvement for {epochs_no_improve} epoch(s) "
-                      f"(best: {best_val_score:.4f})")
+                print(f"[INFO] No improvement "
+                      f"({epochs_no_improve} epoch(s), best: {best_val_score:.4f})")
 
         history.append(epoch_info)
 
-        # Checkpoint
-        ckpt_path = output_dir / f"checkpoint_epoch{epoch}"
-        ckpt_path.mkdir(parents=True, exist_ok=True)
-        model.qwen.save_pretrained(ckpt_path / "qwen_lora")
-        torch.save(model.projection.state_dict(), ckpt_path / "projection.pt")
-        print(f"[INFO] Checkpoint saved to {ckpt_path}")
+        ckpt = output_dir / f"checkpoint_epoch{epoch}"
+        ckpt.mkdir(exist_ok=True)
+        model.qwen.save_pretrained(ckpt / "qwen_lora")
+        torch.save(model.projection.state_dict(), ckpt / "projection.pt")
+        print(f"[INFO] Checkpoint → {ckpt}")
 
-        if args.patience is not None and val_loader is not None and epochs_no_improve >= args.patience:
+        if args.patience and val_loader and epochs_no_improve >= args.patience:
             print(f"[INFO] Early stopping after {epoch} epochs.")
             break
 
-    # ---- Save final model ---------------------------------------------
-    final_path = output_dir / "final_model"
-    final_path.mkdir(parents=True, exist_ok=True)
-    model.qwen.save_pretrained(final_path / "qwen_lora")
-    torch.save(model.projection.state_dict(), final_path / "projection.pt")
-    print(f"[INFO] Final model saved to {final_path}")
+    # ── Save final model ──────────────────────────────────────────────────────
+    final = output_dir / "final_model"
+    final.mkdir(exist_ok=True)
+    model.qwen.save_pretrained(final / "qwen_lora")
+    torch.save(model.projection.state_dict(), final / "projection.pt")
+    qwen_tokenizer.save_pretrained(final / "tokenizer")
+    print(f"[INFO] Final model → {final}")
 
-    # ---- Save training history ----------------------------------------
-    history_path = output_dir / "training_history.json"
-    with open(history_path, "w") as f:
-        json.dump(
-            {
-                "encoder_dir": args.encoder_dir,
-                "qwen_model": args.qwen_model,
-                "lora_r": args.lora_r,
-                "lora_alpha": args.lora_alpha,
-                "lora_targets": lora_targets,
-                "epochs": args.epochs,
-                "lr": args.lr,
-                "history": history,
-            },
-            f,
-            indent=4,
-        )
-    print(f"[INFO] Training history saved to {history_path}")
-
-    if use_wandb:
-        wandb.finish()
+    # ── Save history ──────────────────────────────────────────────────────────
+    with open(output_dir / "training_history.json", "w") as f:
+        json.dump({
+            "vit_model":    args.vit_model,
+            "qwen_model":   args.qwen_model,
+            "lora_r":       args.lora_r,
+            "lora_alpha":   args.lora_alpha,
+            "lora_targets": lora_targets,
+            "epochs":       args.epochs,
+            "lr":           args.lr,
+            "history":      history,
+        }, f, indent=4)
+    print("[INFO] Training history saved.")
 
 
 if __name__ == "__main__":
