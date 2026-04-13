@@ -47,13 +47,14 @@ def make_grid(samples, output_path, title="Qualitative results"):
         ax_text.axis("off")
         
         pred = sample["predicted_caption"]
-        refs = sample["reference_captions"]
-        
+        refs = sample.get("reference_captions", [])
+
         # Formatted text
         text  = f"PREDICTION:\n{pred}\n\n"
-        text += "REFERENCES:\n"
-        for i, r in enumerate(refs[:3], 1):   # maximum 3 references
-            text += f"  {i}. {r}\n"
+        if refs:
+            text += "REFERENCES:\n"
+            for i, r in enumerate(refs[:3], 1):   # maximum 3 references
+                text += f"  {i}. {r}\n"
         
         ax_text.text(
             0, 0.95, text,
@@ -110,9 +111,11 @@ def main():
             f.write(f"=== Example {i} ===\n")
             f.write(f"Image: {sample['image']}\n")
             f.write(f"Prediction: {sample['predicted_caption']}\n")
-            f.write("References:\n")
-            for j, ref in enumerate(sample['reference_captions'], 1):
-                f.write(f"  {j}. {ref}\n")
+            refs = sample.get("reference_captions", [])
+            if refs:
+                f.write("References:\n")
+                for j, ref in enumerate(refs, 1):
+                    f.write(f"  {j}. {ref}\n")
             f.write("\n")
     print(f"[Saved] {txt_path}")
 
