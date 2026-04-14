@@ -1,0 +1,1 @@
+Generate captions detailing diferent objects like water bottles on tables, computer screens with text on it, etc.
