@@ -11,7 +11,10 @@ wandb/
 *.safetensors
 *.arrow
 *.sh
+*.sbatch
 
 logs/
 
 job*
+
+models/
