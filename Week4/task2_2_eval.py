@@ -60,7 +60,7 @@ def parse_args():
     parser.add_argument("--val_img_dir",  required=True)
     parser.add_argument("--val_ann_file", required=True)
     parser.add_argument("--output_file",  default="outputs/results/task2_2_eval_clean.json")
-    parser.add_argument("--batch_size",   type=int, default=8)
+    parser.add_argument("--batch_size",   type=int, default=16)
     parser.add_argument("--num_workers",  type=int, default=4)
     return parser.parse_args()
 
