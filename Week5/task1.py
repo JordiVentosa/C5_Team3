@@ -11,6 +11,10 @@ from diffusers import (
 import argparse
 import torch
 
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
 # Model registry: short name -> HuggingFace ID, pipeline class, inference params
 MODEL_CONFIGS = {
     "sd1.4": {
@@ -87,6 +91,11 @@ MODEL_CONFIGS = {
         "model_id": "black-forest-labs/FLUX.1-schnell",
         "pipeline": FluxPipeline,
         "kwargs": {"num_inference_steps": 4, "guidance_scale": 0.0},
+    },
+    "flux2-dev": {
+        "model_id": "black-forest-labs/FLUX.2-dev",
+        "pipeline": DiffusionPipeline,
+        "kwargs": {"num_inference_steps": 50, "guidance_scale": 3.5},
     },
 }
 
