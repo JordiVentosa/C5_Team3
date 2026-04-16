@@ -9,7 +9,7 @@ from diffusers.utils import load_image
 repo_id = "diffusers/FLUX.2-dev-bnb-4bit" 
 device = "cuda:0"
 torch_dtype = torch.bfloat16
-save_folder = "./outputs/flux2_marc_prompt/"
+save_folder = "./outputs/flux2_hard_adri_prompt_20s/"
 
 if not os.path.exists(save_folder):
     os.makedirs(save_folder)
@@ -29,7 +29,7 @@ pipe.enable_model_cpu_offload()
 
 static_prompt_adri = "IMAGE STYLE: Close taken smartphone photo with potential photographic problems: Possible severe motion blur or out of focus, subject might be partially cut off, the photo can be accidental tilt, it can appear a shaky camera, the lighting might be imprect of have hutter lag blur or poorly framed."
 static_prompt_marc = "Positive Style: photo taken by a blind person with a smartphone, slightly blurry, poorly framed, everyday object, indoor, amateur photography, low quality camera. Negative Style: professional photography, studio lighting, perfect composition, sharp focus, high resolution, stock photo"
-
+static_prompt_hard_adri = "IMAGE STYLE: Close taken smartphone photo with severe photographic problems: Severe motion blur or out of focus, subject is partially cut off, the photo is an accidental tilt, it appears a shaky camera, the lighting has hutter lag blur and is poorly framed."
 
 captions = [
     "A wooden table with a wood grain top featuring a pink phone, a baby bottle, a plate, napkins, and some clothes.",
@@ -51,11 +51,15 @@ captions = [
 
 
 for i, c in enumerate(captions):
+    # + " Also image has quality issues to severe that make it unable to recognize visual content."
+    p = c+" "  + static_prompt_hard_adri
     image = pipe(
-        prompt=c+" "+static_prompt_marc,
+        prompt=p,
         generator=torch.Generator(device=device).manual_seed(42),
-        num_inference_steps=50,
+        num_inference_steps=20,
         guidance_scale=5,
     ).images[0]
+
+    print("Generating with prompt:", p)
     
     image.save(os.path.join(save_folder, f"{i:03d}_output_flux2_gs5.png"))
