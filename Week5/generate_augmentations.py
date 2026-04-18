@@ -6,9 +6,6 @@ from datetime import datetime
 import torch
 from diffusers import StableDiffusion3Pipeline
 
-import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -17,20 +14,41 @@ def parse_args():
     parser.add_argument("--captions", type=str, required=True, help="Path to txt file with one caption per line.")
     parser.add_argument("--output_dir", type=str, required=True, help="Root output directory.")
     parser.add_argument("--images_per_caption", type=int, default=1, help="Number of images to generate per caption.")
+    parser.add_argument("--model_path", type=str, default="./models/sd35-medium", help="Path to SD 3.5 model dir.")
+    parser.add_argument("--lora_weights", type=str, default=None,
+                        help="Path to LoRA weights dir (output of train_lora_sd.py). "
+                             "If not set, uses the base model.")
+    parser.add_argument("--lora_scale", type=float, default=1.0,
+                        help="LoRA fusion scale (0 = base model, 1 = full LoRA, default 1.0).")
     return parser.parse_args()
 
 
-def load_pipeline():
+def load_pipeline(model_path: str, lora_weights: str | None = None, lora_scale: float = 1.0):
     pipe = StableDiffusion3Pipeline.from_pretrained(
-        "stabilityai/stable-diffusion-3.5-medium",
+        model_path,
         torch_dtype=torch.float16,
     ).to("cuda")
+
+    if lora_weights is not None:
+        print(f"Loading LoRA weights from {lora_weights} (scale={lora_scale})")
+        pipe.load_lora_weights(lora_weights)
+        pipe.fuse_lora(lora_scale=lora_scale)
+
     return pipe
 
 
+STYLE_SUFFIX = (
+    "IMAGE STYLE: Close taken smartphone photo with potential photographic problems: "
+    "Possible severe motion blur or out of focus, subject might be partially cut off, "
+    "the photo can be accidental tilt, it can appear a shaky camera, the lighting might be "
+    "imperfect or have shutter lag blur or poorly framed."
+)
+
+
 def generate_image(pipe, caption):
+    prompt = f"{caption}. {STYLE_SUFFIX}"
     return pipe(
-        caption,
+        prompt,
         num_inference_steps=40,
         guidance_scale=4.5,
     ).images[0]
@@ -49,7 +67,7 @@ def main():
 
     print(f"Loaded {len(captions)} captions from {args.captions}")
 
-    pipe = load_pipeline()
+    pipe = load_pipeline(args.model_path, args.lora_weights, args.lora_scale)
 
     images_list = []
     annotations_list = []
