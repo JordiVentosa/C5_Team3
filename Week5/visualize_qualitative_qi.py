@@ -1,12 +1,12 @@
 """
-qualitative_quality_issues.py
+visualize_qualitative_qi.py
 
 Qualitative comparison of three models on VizWiz "quality issues" images.
 Filters images where at least one reference caption is the quality-issues string,
 then shows side-by-side predictions from all three models.
 
 Usage:
-    python Week5/qualitative_quality_issues.py \
+    python Week5/visualize_qualitative_qi.py \
         --output_dir Week5/outputs/qualitative_qi \
         --n 20 \
         --seed 42

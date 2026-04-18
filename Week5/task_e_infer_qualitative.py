@@ -1,23 +1,24 @@
 """
-infer_qualitative.py
+task_e_infer_qualitative.py
 
 Run caption inference with the ViT+Qwen (task_e) architecture on a small set
 of images — intended for qualitative analysis only, not full-val evaluation.
 
 The script accepts an image list from either:
   - a plain .txt with one image filename per line
-  - the qualitative_qi_examples.txt produced by qualitative_quality_issues.py
+  - the qualitative_qi_examples.txt produced by visualize_qualitative_qi.py
     (it auto-detects the "=== Example N: <filename> ===" format)
 
 Usage (on cluster):
-    python Week5/infer_qualitative.py \
-        --checkpoint_dir  outputs/task_e/checkpoint_epoch3 \
-        --vit_model       checkpoints/vit-gpt2 \
-        --qwen_model      checkpoints/qwen3.5-4b \
-        --img_dir         /path/to/vizwiz/val \
-        --image_list      Week5/outputs/qualitative_qi/qualitative_qi_examples.txt \
-        --output_file     Week5/predictions/task_e_qualitative.json \
-        --batch_size      4
+    python Week5/task_e_infer_qualitative.py \
+        --vit_model    Week5/checkpoints/vit-gpt2 \
+        --qwen_model   Week5/checkpoints/qwen3.5-4b \
+        --lora_dir     /path/to/checkpoint_epochN/qwen_lora \
+        --projection   /path/to/checkpoint_epochN/projection.pt \
+        --img_dir      /path/to/vizwiz/val \
+        --image_list   Week5/outputs/qualitative_qi/qualitative_qi_examples.txt \
+        --output_file  Week5/predictions/task_e_qualitative.json \
+        --batch_size   4
 """
 
 import argparse
