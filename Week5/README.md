@@ -8,11 +8,11 @@ Team 3 repository for the [C5 — Visual Recognition](https://mcv.uab.cat/c5-vis
 
 ## Overview
 
-This week extends the Week 4 captioning work in two directions:
+This week extends the Week 4 captioning work in three directions:
 
-1. **Synthetic data generation** — We build a pipeline to generate VizWiz-style images (blind-photography artefacts) and their captions, using Stable Diffusion 3.5, FLUX.2 and large language models (Qwen3.5), with the goal of augmenting the training set for images flagged as "quality issues".
+1. **Synthetic data generation** — A pipeline that produces VizWiz-style images (blind-photography artefacts) and their captions using Stable Diffusion 3.5, FLUX.2 and large language models (Qwen3.5), with the goal of augmenting the training set for images flagged as "quality issues".
 
-2. **Text-to-image model comparison** — We compare multiple diffusion models (SD 1.4 through SDXL, FLUX.2) and run controlled experiments on the SDXL pipeline (sampler choice, CFG scale, number of steps, prompting style).
+2. **Text-to-image model comparison** — Side-by-side comparison of several diffusion models (SD 1.4 through SDXL, FLUX.2) and controlled ablations on the SDXL pipeline (sampler choice, CFG scale, number of steps, prompting style).
 
 3. **Captioning with synthetic data (Task E)** — The best Week 4 captioning architecture (frozen ViT + Qwen3.5 decoder with LoRA) is re-trained including the synthetic images, and a qualitative analysis is carried out specifically on "quality issues" images.
 
@@ -35,18 +35,7 @@ Week5/
 │   ├── metrics.py                      # BLEU / METEOR / ROUGE-L metrics
 │   └── __init__.py
 │
-├── checkpoints/                        # Local model checkpoints
-│   ├── vit-gpt2/                       # Frozen ViT encoder (from Week 4)
-│   ├── qwen3.5-4b/                     # Base Qwen3.5-4B weights
-│   └── finetuned/                      # SD3.5 LoRA fine-tuned on VizWiz style
-│
-├── predictions/                        # Saved prediction JSON files
-│   ├── captions_epoch3.json            # Task E epoch-3 captions (full val set)
-│   ├── task_e_eval.json                # Task E best-model evaluation (full val)
-│   ├── task_e_eval_3ds.json            # Task E + 3DS synthetic evaluation
-│   └── task_e_qualitative.json         # Task E captions for qualitative subset
-│
-├── outputs/                            # Generated metrics and qualitative figures
+├── outputs/                            # Generated metrics, captions and qualitative figures
 │
 │ ── Text-to-Image Tasks ────────────────────────────────────────────────────
 ├── task1_t2i_generation.py             # Task 1 — multi-model T2I generation
@@ -72,9 +61,7 @@ Week5/
 │
 │ ── Utilities ──────────────────────────────────────────────────────────────
 ├── utils_flux2_quantized.py            # FLUX.2 4-bit quantised inference (quick test)
-├── utils_flux2_simple.py               # Simple FLUX.2 generation sanity check
-│
-└── README.md
+└── utils_flux2_simple.py               # Simple FLUX.2 generation sanity check
 ```
 
 ---
@@ -83,11 +70,14 @@ Week5/
 
 ```bash
 conda activate C5   # same environment as Week 4
-# Additional dependencies for diffusion models:
-pip install diffusers accelerate peft safetensors
+pip install -r Week5/requirements.txt
 ```
 
 > **Note:** FLUX.2 and SD3.5 require ~24 GB VRAM. Task E fine-tuning was run on an H100 (80 GB). Image generation experiments used an A100 (40 GB).
+
+### Stable Diffusion LoRA Training
+
+The LoRA adapters used to steer Stable Diffusion towards the VizWiz "blind-photography" visual style were trained with [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), using its standard training scripts and configuration files. The resulting weights are then loaded at inference time by the scripts in this repository.
 
 ---
 
@@ -139,8 +129,8 @@ python Week5/task_e_finetune.py \
     --train_ann_file Week4/data/annotations/train.json \
     --val_img_dir    Week4/data/val \
     --val_ann_file   Week4/data/annotations/val.json \
-    --vit_model      Week5/checkpoints/vit-gpt2 \
-    --qwen_model     Week5/checkpoints/qwen3.5-4b \
+    --vit_model      /path/to/vit-gpt2 \
+    --qwen_model     /path/to/qwen3.5-4b \
     --lora_r 8 --lora_alpha 16 \
     --epochs 5 --lr 1e-4 \
     --output_dir     Week5/outputs/task_e
@@ -161,28 +151,28 @@ Use `task_e_finetune_synthetic.py` instead of `task_e_finetune.py`.
 
 ```bash
 python Week5/task_e_evaluate.py \
-    --vit_model    Week5/checkpoints/vit-gpt2 \
-    --qwen_model   Week5/checkpoints/qwen3.5-4b \
-    --lora_dir     Week5/outputs/task_e/best_model/qwen_lora \
-    --proj_path    Week5/outputs/task_e/best_model/projection.pt \
+    --vit_model    /path/to/vit-gpt2 \
+    --qwen_model   /path/to/qwen3.5-4b \
+    --lora_dir     /path/to/best_model/qwen_lora \
+    --proj_path    /path/to/best_model/projection.pt \
     --val_img_dir  /path/to/vizwiz/val \
     --val_ann_file /path/to/vizwiz/annotations/val.json \
-    --output_file  Week5/predictions/task_e_eval.json
+    --output_file  Week5/outputs/task_e_eval.json
 ```
 
 #### Inference on a Small Subset (for qualitative analysis)
 
-Useful when running on the cluster and you only need predictions for a handful of images.
+Useful when running on the cluster and only predictions for a handful of images are needed.
 
 ```bash
 python Week5/task_e_infer_qualitative.py \
-    --vit_model    Week5/checkpoints/vit-gpt2 \
-    --qwen_model   Week5/checkpoints/qwen3.5-4b \
+    --vit_model    /path/to/vit-gpt2 \
+    --qwen_model   /path/to/qwen3.5-4b \
     --lora_dir     /path/to/checkpoint_epochN/qwen_lora \
     --projection   /path/to/checkpoint_epochN/projection.pt \
     --img_dir      /path/to/vizwiz/val \
     --image_list   Week5/outputs/qualitative_qi/qualitative_qi_examples.txt \
-    --output_file  Week5/predictions/task_e_qualitative.json
+    --output_file  Week5/outputs/task_e_qualitative.json
 ```
 
 `--image_list` accepts either the `qualitative_qi_examples.txt` format (auto-detected) or a plain list of filenames (one per line).
@@ -191,7 +181,7 @@ python Week5/task_e_infer_qualitative.py \
 
 ### Synthetic Data Pipeline
 
-The pipeline runs in four steps:
+The pipeline runs in three steps:
 
 #### Step 1 — Generate Image Prompts
 
@@ -206,13 +196,13 @@ python Week5/synth_generate_prompts.py
 
 Three alternative backends are available:
 
-**SD3.5 (with optional LoRA):**
+**SD3.5 (with optional LoRA trained via kohya-ss/sd-scripts):**
 ```bash
 python Week5/synth_generate_sd35_images.py \
     --captions     Week5/outputs/synth_prompts.txt \
     --output_dir   Week5/outputs/synth_images_sd35 \
     --model_path   /path/to/sd35-medium \
-    --lora_weights Week5/checkpoints/finetuned   # optional
+    --lora_weights /path/to/lora_finetuned   # optional
 ```
 
 **FLUX.2 with VizWiz-style LoRA:**
