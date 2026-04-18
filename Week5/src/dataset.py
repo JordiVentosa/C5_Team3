@@ -15,7 +15,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 class VizWizDataset(Dataset):
-    def __init__(self, img_dir: str, ann_file:str, feature_extractor=None, transform=None):
+    def __init__(self, img_dir: str, ann_file:str, feature_extractor=None, transform=None,keep_quality = True):
         """
         img_dir         : path to folder with .jpg images
         ann_file        : path to val.json / test.json
@@ -37,19 +37,44 @@ class VizWizDataset(Dataset):
             captions_by_id.setdefault(iid, []).append(ann['caption'].strip().lower())
 
         self.samples = []
+        
+        filtered_imgs = 0
+        unfiltered_qualities = 0
+        
         for iid, captions in captions_by_id.items():
             fname = self.id2file.get(iid)
             if fname is None:
                 continue
             img_path = self.img_dir / fname
-            if img_path.exists():
+            if img_path.exists() and keep_quality:
                 self.samples.append({
                     "image_id": iid,
                     "image_path": str(img_path),
                     "captions": captions
                 })
+            elif img_path.exists() and keep_quality == False:
+                BAD = "quality issues are too severe to recognize visual content."
+                clean = [c for c in captions if BAD not in c]
+                if len(clean) >= 2:
+                    filtered_imgs += 1
+                    self.samples.append({
+                        "image_id": iid,
+                        "image_path": str(img_path),
+                        "captions": clean,
+                    })
+             
+                else:
+                    unfiltered_qualities+= 1
+                    self.samples.append({
+                    "image_id": iid,
+                    "image_path": str(img_path),
+                    "captions": captions
+                    })
+                    
+                    
         print (f"[VizWizDataset] Loaded {len(self.samples)} samples from {ann_file}")
-    
+        print(filtered_imgs)
+        print(unfiltered_qualities)
     def __len__(self):
         return len(self.samples)
     

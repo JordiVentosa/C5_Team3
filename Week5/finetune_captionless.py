@@ -1,4 +1,36 @@
-# task2_2_synthetic.py
+"""
+task2_2.py
+Fine-tune a Qwen3.5 decoder with LoRA using a frozen ViT encoder.
+
+Architecture:
+    Frozen ViT (nlpconnect/vit-gpt2-image-captioning) -> Projection MLP -> Qwen3.5 + LoRA
+
+Since the best Task 1.2 model only trained the GPT2 decoder (captioner mode),
+the ViT encoder is unchanged from the original pretrained weights.
+We therefore load it directly from the local model path — no checkpoint needed.
+
+Usage:
+    # Qwen3.5-0.8B with r=8, alpha=16
+    python task2_2.py \
+        --train_img_dir  data/vizwiz/train \
+        --train_ann_file data/vizwiz/annotations/train.json \
+        --val_img_dir    data/vizwiz/val \
+        --val_ann_file   data/vizwiz/annotations/val.json \
+        --vit_model      /home/mcvstudent20/C5_Team3/Week4/modelo_vit_gpt2 \
+        --qwen_model     /home/mcvstudent20/C5_Team3/Week4/modelo_qwen35_0.8b \
+        --output_dir     outputs/task2_2_qwen35_0.8b_r8a16 \
+        --lora_r 8 --lora_alpha 16 \
+        --epochs 5 --lr 1e-4
+
+    # Qwen3.5-4B with r=8, alpha=16
+    python task2_2.py \
+        --vit_model      /home/mcvstudent20/C5_Team3/Week4/modelo_vit_gpt2 \
+        --qwen_model     /home/mcvstudent20/C5_Team3/Week4/modelo_qwen35_4b \
+        --output_dir     outputs/task2_2_qwen35_4b_r8a16 \
+        --lora_r 8 --lora_alpha 16 \
+        ...
+"""
+
 import argparse
 import json
 import random
@@ -8,7 +40,7 @@ from functools import partial
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torchvision import transforms as T
 from transformers import (
@@ -24,25 +56,11 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent))
 from src.dataset import VizWizDataset, collate_fn
 from src.metrics import compute_metrics, print_metrics
+
+
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-
-
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-# ─────────────────────────────────────────────────────────────────────────────
-# Caption cleaning
-# ─────────────────────────────────────────────────────────────────────────────
-
-def clean_caption(text):
-    """Removes Qwen3.5 output artifacts and keeps the first sentence."""
-    text = text.replace("<|im_start|>", "").replace("<|im_end|>", "")
-    text = text.replace("assistant", "").replace("user", "")
-    if "<think>" in text:
-        text = text.split("</think>")[-1]
-    text = text.strip()
-    if "." in text:
-        text = text.split(".")[0].strip()
-    return text.lower()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +68,11 @@ def clean_caption(text):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ViTQwenCaptioner(nn.Module):
+    """
+    Frozen ViT encoder -> Projection MLP -> Qwen3.5 decoder (LoRA).
+    Visual features are prepended to the text embeddings as prefix tokens.
+    """
+
     def __init__(self, vit_encoder, qwen_model, vit_hidden_size, qwen_hidden_size):
         super().__init__()
         self.vit = vit_encoder
@@ -61,29 +84,34 @@ class ViTQwenCaptioner(nn.Module):
         self.qwen = qwen_model
 
     def _get_visual_embeds(self, pixel_values):
+        """Runs frozen ViT and projects features to Qwen's embedding space."""
         qwen_dtype = next(self.qwen.parameters()).dtype
         with torch.no_grad():
-            vit_out = self.vit(pixel_values.to(torch.float32)).last_hidden_state
+            vit_out = self.vit(pixel_values.to(torch.float32)).last_hidden_state  # [B, N, 768]
         proj = self.projection(vit_out)
         return proj.to(qwen_dtype)
 
     def forward(self, pixel_values, input_ids, attention_mask, labels):
-        visual_embeds = self._get_visual_embeds(pixel_values)
-        text_embeds   = self.qwen.get_input_embeddings()(input_ids)
+        visual_embeds = self._get_visual_embeds(pixel_values)  # [B, N_vis, H]
+        text_embeds   = self.qwen.get_input_embeddings()(input_ids)  # [B, T, H]
+
         inputs_embeds = torch.cat([visual_embeds, text_embeds], dim=1)
 
         B, N_vis = visual_embeds.shape[:2]
-        vis_attn  = torch.ones(B, N_vis, device=pixel_values.device, dtype=attention_mask.dtype)
+        vis_attn  = torch.ones(B, N_vis, device=pixel_values.device,
+                               dtype=attention_mask.dtype)
         full_attn = torch.cat([vis_attn, attention_mask], dim=1)
 
-        vis_labels  = torch.full((B, N_vis), -100, device=labels.device, dtype=labels.dtype)
+        vis_labels  = torch.full((B, N_vis), -100,
+                                 device=labels.device, dtype=labels.dtype)
         full_labels = torch.cat([vis_labels, labels], dim=1)
 
-        return self.qwen(
+        outputs = self.qwen(
             inputs_embeds=inputs_embeds,
             attention_mask=full_attn,
             labels=full_labels,
         )
+        return outputs
 
     @torch.no_grad()
     def generate(self, pixel_values, tokenizer, max_new_tokens=64, **gen_kwargs):
@@ -91,25 +119,29 @@ class ViTQwenCaptioner(nn.Module):
         B, N_vis = visual_embeds.shape[:2]
 
         bos_id       = tokenizer.bos_token_id or tokenizer.eos_token_id
-        start_ids    = torch.full((B, 1), bos_id, device=pixel_values.device, dtype=torch.long)
+        start_ids    = torch.full((B, 1), bos_id,
+                                  device=pixel_values.device, dtype=torch.long)
         start_embeds = self.qwen.get_input_embeddings()(start_ids)
 
         inputs_embeds = torch.cat([visual_embeds, start_embeds], dim=1)
-        attn_mask     = torch.ones(B, N_vis + 1, device=pixel_values.device, dtype=torch.long)
+        attn_mask     = torch.ones(B, N_vis + 1,
+                                   device=pixel_values.device, dtype=torch.long)
 
-        return self.qwen.generate(
+        output_ids = self.qwen.generate(
             inputs_embeds=inputs_embeds,
             attention_mask=attn_mask,
             max_new_tokens=max_new_tokens,
             **gen_kwargs,
         )
+        return output_ids
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Collate
+# Collate for training
 # ─────────────────────────────────────────────────────────────────────────────
 
 def train_collate_fn(batch, tokenizer, max_target_length=64):
+    """Stacks pixel_values and tokenises one random reference caption per image."""
     pixel_values = torch.stack([item["pixel_values"] for item in batch])
     texts = [random.choice(item["captions"]) for item in batch]
 
@@ -122,7 +154,8 @@ def train_collate_fn(batch, tokenizer, max_target_length=64):
     )
     input_ids      = encoding.input_ids
     attention_mask = encoding.attention_mask
-    labels         = input_ids.clone()
+
+    labels = input_ids.clone()
     labels[labels == tokenizer.pad_token_id] = -100
 
     return {
@@ -190,7 +223,7 @@ def evaluate(model, tokenizer, dataloader, device, gen_kwargs):
                 **gen_kwargs,
             )
             captions = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-            captions = [clean_caption(cap) for cap in captions]
+            captions = [cap.strip().lower() for cap in captions]
 
             predictions.extend(captions)
             references.extend(batch["captions"])
@@ -205,23 +238,23 @@ def evaluate(model, tokenizer, dataloader, device, gen_kwargs):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Task 2.2 — Frozen ViT + Qwen3.5 decoder with LoRA + synthetic data"
+        description="Task 2.2 — Frozen ViT + Qwen3.5 decoder with LoRA"
     )
-    # VizWiz real data
+    # Data
     parser.add_argument("--train_img_dir",  required=True)
     parser.add_argument("--train_ann_file", required=True)
     parser.add_argument("--val_img_dir",    default=None)
     parser.add_argument("--val_ann_file",   default=None)
 
-    # Synthetic data
-    parser.add_argument("--synth_img_dir",  default=None,
-                        help="Path to synthetic images dir (optional)")
-    parser.add_argument("--synth_ann_file", default=None,
-                        help="Path to synthetic annotations JSON (optional)")
+    # ViT encoder — local path (offline cluster)
+    parser.add_argument("--vit_model", type=str, required=True,
+                        help="Local path to vit-gpt2 model "
+                             "(e.g. /home/.../modelo_vit_gpt2)")
 
-    # Models
-    parser.add_argument("--vit_model",  required=True)
-    parser.add_argument("--qwen_model", required=True)
+    # Qwen3.5 decoder — local path
+    parser.add_argument("--qwen_model", type=str, required=True,
+                        help="Local path to Qwen3.5 text model "
+                             "(e.g. /home/.../modelo_qwen35_0.8b)")
 
     # LoRA
     parser.add_argument("--lora_r",       type=int,   default=8)
@@ -240,6 +273,10 @@ def parse_args():
     parser.add_argument("--max_samples",    type=int,   default=None)
     parser.add_argument("--patience",       type=int,   default=None)
     parser.add_argument("--augment",        action="store_true")
+
+    # Treure captions
+    
+    parser.add_argument("--keep_captions", type=bool, default=True)
 
     parser.add_argument("--output_dir", type=str, default="outputs/task2_2")
 
@@ -269,7 +306,7 @@ def main():
     vit_encoder.eval()
     for p in vit_encoder.parameters():
         p.requires_grad = False
-    vit_hidden_size = vit_encoder.config.hidden_size
+    vit_hidden_size = vit_encoder.config.hidden_size  # 768
     print(f"[INFO] ViT encoder frozen. Hidden size: {vit_hidden_size}")
 
     # ── Load Qwen3.5 decoder ──────────────────────────────────────────────────
@@ -304,6 +341,7 @@ def main():
         qwen_model=qwen_model,
         vit_hidden_size=vit_hidden_size,
         qwen_hidden_size=qwen_hidden_size,
+    
     ).to(device)
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -320,33 +358,17 @@ def main():
         print("[INFO] Augmentations enabled.")
 
     # ── Datasets ──────────────────────────────────────────────────────────────
-    print("[INFO] Building VizWiz training dataset...", flush=True)
-    vizwiz_dataset = VizWizDataset(
+    print("[INFO] Building training dataset...", flush=True)
+    train_dataset = VizWizDataset(
         img_dir=args.train_img_dir,
         ann_file=args.train_ann_file,
         feature_extractor=feature_extractor,
         transform=train_transform,
+        keep_quality=args.keep_captions
     )
     if args.max_samples:
-        vizwiz_dataset.samples = vizwiz_dataset.samples[:args.max_samples]
-        print(f"[INFO] Limiting VizWiz to {args.max_samples} samples.")
-
-    train_dataset = vizwiz_dataset
-
-    # Combina con sintético si se proporciona
-    if args.synth_img_dir and args.synth_ann_file:
-        print("[INFO] Building synthetic training dataset...", flush=True)
-        synth_dataset = VizWizDataset(
-            img_dir=args.synth_img_dir,
-            ann_file=args.synth_ann_file,
-            feature_extractor=feature_extractor,
-            transform=train_transform,
-        )
-        train_dataset = ConcatDataset([vizwiz_dataset, synth_dataset])
-        print(f"[INFO] Combined dataset: {len(vizwiz_dataset)} VizWiz + "
-              f"{len(synth_dataset)} synthetic = {len(train_dataset)} total")
-    else:
-        print(f"[INFO] Training on VizWiz only: {len(train_dataset)} samples")
+        train_dataset.samples = train_dataset.samples[:args.max_samples]
+        print(f"[INFO] Limiting to {args.max_samples} training samples.")
 
     train_loader = DataLoader(
         train_dataset,
@@ -385,11 +407,10 @@ def main():
     )
 
     gen_kwargs = {
-        "max_new_tokens":    64,
-        "do_sample":         False,
-        "repetition_penalty": 1.3,
-        "eos_token_id":      qwen_tokenizer.eos_token_id,
-        "pad_token_id":      qwen_tokenizer.pad_token_id,
+        "max_new_tokens": 64,
+        "do_sample":      False,
+        "eos_token_id":   qwen_tokenizer.eos_token_id,
+        "pad_token_id":   qwen_tokenizer.pad_token_id,
     }
 
     # ── Training loop ─────────────────────────────────────────────────────────
@@ -404,20 +425,12 @@ def main():
         epoch_info = {"epoch": epoch, "train_loss": train_loss}
 
         if val_loader is not None:
-            preds, refs, img_paths = evaluate(
+            preds, refs, _ = evaluate(
                 model, qwen_tokenizer, val_loader, device, gen_kwargs
             )
             metrics = compute_metrics(preds, refs)
             print_metrics(metrics, title=f"Epoch {epoch} Validation")
             epoch_info["val_metrics"] = metrics
-
-            captions_path = output_dir / f"captions_epoch{epoch}.json"
-            with open(captions_path, "w") as f:
-                json.dump([
-                    {"image_path": p, "predicted": pred, "references": ref}
-                    for p, pred, ref in zip(img_paths, preds, refs)
-                ], f, indent=2)
-            print(f"[INFO] Captions saved → {captions_path}")
 
             val_score = sum(metrics.values()) / len(metrics)
             if val_score > best_val_score:
@@ -453,6 +466,7 @@ def main():
     qwen_tokenizer.save_pretrained(final / "tokenizer")
     print(f"[INFO] Final model → {final}")
 
+    # ── Save history ──────────────────────────────────────────────────────────
     with open(output_dir / "training_history.json", "w") as f:
         json.dump({
             "vit_model":    args.vit_model,
